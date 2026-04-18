@@ -12,3 +12,7 @@ Excluded from this repository:
 - standalone billing frontend
 - billing-center frontend entrypoints
 - backend account/fund/verification modules
+
+Additional branch:
+
+- `kafka`: contains a Kafka management console subproject under `kafka-console/`
