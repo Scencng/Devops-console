@@ -1,0 +1,7 @@
+.idea/
+.DS_Store
+backend/server
+backend/*.log
+backend/data/*.db
+frontend/node_modules/
+frontend/dist/

@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devops-backend
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: devops-backend
+  template:
+    metadata:
+      labels:
+        app: devops-backend
+    spec:
+      containers:
+        - name: devops-backend
+          image: harbor.peppa-pig.top:8443/argo-workflow/devops-backend:latest
+          ports:
+            - containerPort: 8081
+              name: app
+            - containerPort: 9200
+              name: prometheus
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: devops-backend-svc
+  namespace: default
+spec:
+  selector: { app: devops-backend }
+  ports:
+    - port: 8081
+      targetPort: app
+      name: http
+    - port: 9200
+      targetPort: prometheus
+      name: metrics
