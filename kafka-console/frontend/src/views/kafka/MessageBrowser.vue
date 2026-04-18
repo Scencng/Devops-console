@@ -3,8 +3,9 @@
     <el-card class="page-header-card">
       <div class="page-header">
         <div>
+          <div class="page-eyebrow">Messages</div>
           <h2>消息浏览</h2>
-          <p>按 Topic / Partition / Offset 抽样查看消息，并支持直接发送测试消息</p>
+          <p>按 Topic / Partition / Offset 抽样查看消息，并在需要时直接发送测试消息进行验证。</p>
         </div>
         <div class="header-actions">
           <el-button @click="loadMessages" :loading="loading">查询消息</el-button>
@@ -19,76 +20,66 @@
       </div>
     </el-card>
 
-    <el-card class="content-card">
-      <el-form label-position="top">
-        <el-row :gutter="20">
-          <el-col :span="6">
-            <el-form-item label="集群">
-              <el-select v-model="form.clusterId" @change="handleClusterChange">
-                <el-option
-                  v-for="cluster in clusters"
-                  :key="cluster.id"
-                  :label="cluster.name"
-                  :value="cluster.id"
-                />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="6">
-            <el-form-item label="Topic">
-              <el-select v-model="form.topic" @change="handleTopicChange">
-                <el-option
-                  v-for="topic in topics"
-                  :key="topic.name"
-                  :label="topic.name"
-                  :value="topic.name"
-                />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="4">
-            <el-form-item label="Partition">
-              <el-select v-model="form.partition">
-                <el-option v-for="p in partitionOptions" :key="p" :label="String(p)" :value="p" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="4">
-            <el-form-item label="模式">
-              <el-select v-model="form.mode">
-                <el-option label="最新消息" value="latest" />
-                <el-option label="最早消息" value="earliest" />
-                <el-option label="指定 Offset" value="offset" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="4">
-            <el-form-item label="Limit">
-              <el-input-number v-model="form.limit" :min="1" :max="500" style="width: 100%" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-row :gutter="20">
-          <el-col :span="6" v-if="form.mode === 'offset'">
-            <el-form-item label="Offset">
-              <el-input-number v-model="form.offset" :min="0" style="width: 100%" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="关键字过滤">
-              <el-input v-model="form.keyword" placeholder="按 key/value 过滤" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-      </el-form>
+    <div class="page-metrics">
+      <div class="page-metric-card is-accent">
+        <span>当前集群</span>
+        <strong>{{ currentClusterName }}</strong>
+        <p>本页当前正在浏览消息的 Kafka 集群。</p>
+      </div>
+      <div class="page-metric-card">
+        <span>当前 Topic</span>
+        <strong>{{ form.topic || '-' }}</strong>
+        <p>当前正在查询的 Topic。</p>
+      </div>
+      <div class="page-metric-card is-success">
+        <span>当前分区</span>
+        <strong>{{ form.partition }}</strong>
+        <p>消息浏览默认使用的目标分区。</p>
+      </div>
+      <div class="page-metric-card is-warning">
+        <span>返回消息数</span>
+        <strong>{{ result.count || 0 }}</strong>
+        <p>最近一次查询返回的消息条数。</p>
+      </div>
+    </div>
+
+    <el-card class="content-card filter-card">
+      <div class="toolbar-row">
+        <div class="toolbar-left">
+          <el-select v-model="form.clusterId" style="width: 240px" @change="handleClusterChange">
+            <el-option v-for="cluster in clusters" :key="cluster.id" :label="cluster.name" :value="cluster.id" />
+          </el-select>
+          <el-select v-model="form.topic" style="width: 240px" @change="handleTopicChange">
+            <el-option v-for="topic in topics" :key="topic.name" :label="topic.name" :value="topic.name" />
+          </el-select>
+          <el-select v-model="form.partition" style="width: 140px">
+            <el-option v-for="p in partitionOptions" :key="p" :label="String(p)" :value="p" />
+          </el-select>
+          <el-select v-model="form.mode" style="width: 160px">
+            <el-option label="最新消息" value="latest" />
+            <el-option label="最早消息" value="earliest" />
+            <el-option label="指定 Offset" value="offset" />
+          </el-select>
+          <el-input-number v-model="form.limit" :min="1" :max="500" style="width: 140px" />
+        </div>
+      </div>
+
+      <div class="toolbar-row secondary-toolbar">
+        <div class="toolbar-left">
+          <el-input v-if="form.mode === 'offset'" v-model="form.offset" placeholder="指定 Offset" style="width: 180px" />
+          <el-input v-model="form.keyword" placeholder="按 key/value 过滤" style="width: 260px" />
+        </div>
+      </div>
     </el-card>
 
     <el-card class="content-card" v-loading="loading">
       <template #header>
         <div class="card-header">
-          共 {{ result.count || 0 }} 条消息，起始 Offset {{ result.startOffset ?? '-' }}
+          <span>消息列表</span>
+          <span class="card-subtitle">共 {{ result.count || 0 }} 条消息，起始 Offset {{ result.startOffset ?? '-' }}</span>
         </div>
       </template>
+
       <el-table :data="result.messages || []" empty-text="暂无消息数据" height="600">
         <el-table-column prop="offset" label="Offset" width="110" />
         <el-table-column prop="partition" label="Partition" width="100" />
@@ -114,24 +105,14 @@
           <el-col :span="8">
             <el-form-item label="集群">
               <el-select v-model="produceForm.clusterId" @change="handleProduceClusterChange">
-                <el-option
-                  v-for="cluster in clusters"
-                  :key="cluster.id"
-                  :label="cluster.name"
-                  :value="cluster.id"
-                />
+                <el-option v-for="cluster in clusters" :key="cluster.id" :label="cluster.name" :value="cluster.id" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="10">
             <el-form-item label="Topic">
               <el-select v-model="produceForm.topic">
-                <el-option
-                  v-for="topic in produceTopics"
-                  :key="topic.name"
-                  :label="topic.name"
-                  :value="topic.name"
-                />
+                <el-option v-for="topic in produceTopics" :key="topic.name" :label="topic.name" :value="topic.name" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -146,7 +127,7 @@
         </el-row>
 
         <el-row :gutter="16">
-          <el-col :span="8" v-if="producePartitionMode === 'manual'">
+          <el-col v-if="producePartitionMode === 'manual'" :span="8">
             <el-form-item label="Partition">
               <el-input-number v-model="produceForm.partition" :min="0" style="width: 100%" />
             </el-form-item>
@@ -185,12 +166,8 @@
         <div class="header-editor">
           <div v-for="(header, index) in produceHeaders" :key="index" class="header-row">
             <el-row :gutter="12">
-              <el-col :span="7">
-                <el-input v-model="header.key" placeholder="Header Key" />
-              </el-col>
-              <el-col :span="11">
-                <el-input v-model="header.value" placeholder="Header Value" />
-              </el-col>
+              <el-col :span="7"><el-input v-model="header.key" placeholder="Header Key" /></el-col>
+              <el-col :span="11"><el-input v-model="header.value" placeholder="Header Value" /></el-col>
               <el-col :span="4">
                 <el-select v-model="header.valueEncoding">
                   <el-option label="文本" value="plain" />
@@ -224,12 +201,10 @@
         <div class="section-title">Key 预览</div>
         <pre class="detail-pre">{{ activeMessage?.keyPreview || '(empty)' }}</pre>
       </div>
-
       <div class="detail-section">
         <div class="section-title">Value 预览</div>
         <pre class="detail-pre">{{ activeMessage?.valuePreview || '(empty)' }}</pre>
       </div>
-
       <div class="detail-section">
         <div class="section-title">Headers</div>
         <el-table :data="activeMessage?.headers || []" empty-text="暂无 Header">
@@ -237,12 +212,10 @@
           <el-table-column prop="value" label="Value" min-width="300" show-overflow-tooltip />
         </el-table>
       </div>
-
       <div class="detail-section">
         <div class="section-title">Key Base64</div>
         <pre class="detail-pre">{{ activeMessage?.keyBase64 || '(empty)' }}</pre>
       </div>
-
       <div class="detail-section">
         <div class="section-title">Value Base64</div>
         <pre class="detail-pre">{{ activeMessage?.valueBase64 || '(empty)' }}</pre>
@@ -296,6 +269,10 @@ const produceForm = reactive({
 })
 
 const produceHeaders = ref([{ key: '', value: '', valueEncoding: 'plain' }])
+
+const currentClusterName = computed(
+  () => clusters.value.find((item) => item.id === form.clusterId)?.name || '-',
+)
 
 const partitionOptions = computed(() => {
   const item = topics.value.find((topic) => topic.name === form.topic)
@@ -464,6 +441,10 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.secondary-toolbar {
+  margin-top: 14px;
+}
+
 .editor-title {
   margin-top: 8px;
   margin-bottom: 12px;
