@@ -54,7 +54,6 @@ INSERT IGNORE INTO `sys_menu` (`id`, `parent_id`, `name`, `type`, `path`, `compo
 (7004, 7000, 'Broker 管理', 2, '/kafka/brokers', 'kafka/BrokerManagement', 'Monitor', NULL, 40, 1, 1, NULL, NULL, NULL),
 (7005, 7000, '消费组管理', 2, '/kafka/groups', 'kafka/ConsumerGroupManagement', 'Histogram', NULL, 50, 1, 1, NULL, NULL, NULL),
 (7006, 7000, '消息浏览', 2, '/kafka/messages', 'kafka/MessageBrowser', 'Search', NULL, 60, 1, 1, NULL, NULL, NULL),
-(7007, 7000, 'Prometheus 面板', 2, '/kafka/prometheus', 'kafka/PrometheusPanel', 'TrendCharts', NULL, 70, 1, 1, NULL, NULL, NULL),
 (7008, 7000, '审计日志', 2, '/kafka/audits', 'kafka/AuditLog', 'Document', NULL, 80, 1, 1, NULL, NULL, NULL),
 (7101, 7002, '新增 Kafka 集群', 3, NULL, NULL, NULL, 'kafka:cluster:create', 10, 1, 1, NULL, NULL, NULL),
 (7102, 7002, '编辑 Kafka 集群', 3, NULL, NULL, NULL, 'kafka:cluster:edit', 20, 1, 1, NULL, NULL, NULL),
@@ -68,7 +67,7 @@ INSERT IGNORE INTO `sys_menu` (`id`, `parent_id`, `name`, `type`, `path`, `compo
 (7110, 7006, '发送消息', 3, NULL, NULL, NULL, 'kafka:message:produce', 10, 1, 1, NULL, NULL, NULL);
 
 INSERT IGNORE INTO `sys_role_menu` (`role_id`, `menu_id`) VALUES
-(1,7000),(1,7001),(1,7002),(1,7003),(1,7004),(1,7005),(1,7006),(1,7007),(1,7008),(1,7010),
+(1,7000),(1,7001),(1,7002),(1,7003),(1,7004),(1,7005),(1,7006),(1,7008),(1,7010),
 (1,7101),(1,7102),(1,7103),(1,7104),(1,7105),(1,7106),(1,7107),(1,7108),(1,7109),(1,7110);
 
 SET FOREIGN_KEY_CHECKS = 1;

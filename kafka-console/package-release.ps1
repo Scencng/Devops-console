@@ -16,6 +16,15 @@ function Require-Command($Name) {
     }
 }
 
+function Convert-ToWslPath($WindowsPath) {
+    $normalized = $WindowsPath -replace '\\', '/'
+    $result = (& wsl.exe wslpath -a -- "$normalized" 2>$null)
+    if (-not $result) {
+        throw "无法将路径转换为 WSL 路径: $WindowsPath"
+    }
+    return ($result | Select-Object -First 1).Trim()
+}
+
 Require-Command tar
 Require-Command npm
 Require-Command wsl
@@ -28,6 +37,9 @@ $stageProjectDir = Join-Path $stageRoot $projectName
 $archiveName = "$ArchivePrefix-$timestamp.tar.gz"
 $archivePath = Join-Path $resolvedProjectDir $archiveName
 $manifestPath = Join-Path $resolvedProjectDir "PREBUILT_MANIFEST.txt"
+$frontendDir = Join-Path $resolvedProjectDir "frontend"
+$frontendNodeModules = Join-Path $frontendDir "node_modules"
+$cleanupNodeModules = $false
 
 function Copy-PathIfExists($Source, $DestinationParent, [string]$TargetName = "") {
     if (-not (Test-Path -LiteralPath $Source)) {
@@ -49,8 +61,20 @@ function Copy-PathIfExists($Source, $DestinationParent, [string]$TargetName = ""
     }
 }
 
+if (-not (Test-Path -LiteralPath $frontendNodeModules)) {
+    Write-Step "前端依赖缺失，执行 npm ci"
+    Push-Location $frontendDir
+    try {
+        npm ci
+        $cleanupNodeModules = $true
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 Write-Step "构建前端"
-Push-Location (Join-Path $resolvedProjectDir "frontend")
+Push-Location $frontendDir
 try {
     npm run build
 }
@@ -58,16 +82,29 @@ finally {
     Pop-Location
 }
 
-Write-Step "在 WSL 中构建 Linux 后端二进制"
-$wslProjectDir = (wsl.exe wslpath -a $resolvedProjectDir).Trim()
-if (-not $wslProjectDir) {
-    throw "无法将项目路径转换为 WSL 路径: $resolvedProjectDir"
-}
-$wslBuildCmd = "cd '$wslProjectDir/backend' && export GOPROXY=https://goproxy.cn,direct && export GOSUMDB=sum.golang.google.cn && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o devops ./cmd/server"
-wsl.exe sh -lc $wslBuildCmd
-
 Write-Step "整理预构建发布目录"
 New-Item -ItemType Directory -Force -Path $stageProjectDir | Out-Null
+$backendStage = Join-Path $stageProjectDir "backend"
+$frontendStage = Join-Path $stageProjectDir "frontend"
+New-Item -ItemType Directory -Force -Path $backendStage | Out-Null
+New-Item -ItemType Directory -Force -Path $frontendStage | Out-Null
+
+Write-Step "在 WSL 中构建 Linux 后端二进制到临时打包目录"
+$wslProjectDir = Convert-ToWslPath $resolvedProjectDir
+$wslStageProjectDir = Convert-ToWslPath $stageProjectDir
+$wslBuildScript = Join-Path $stageRoot "build-backend.sh"
+$wslBuildScriptContent = @"
+#!/usr/bin/env sh
+set -e
+mkdir -p '$wslStageProjectDir/backend'
+cd '$wslProjectDir/backend'
+export GOPROXY=https://goproxy.cn,direct
+export GOSUMDB=sum.golang.google.cn
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags='-s -w' -o '$wslStageProjectDir/backend/devops' ./cmd/server
+"@
+Set-Content -LiteralPath $wslBuildScript -Value $wslBuildScriptContent -Encoding UTF8
+$wslBuildScriptPath = Convert-ToWslPath $wslBuildScript
+wsl.exe sh $wslBuildScriptPath
 
 $topLevelFiles = @(
     ".env.example",
@@ -81,15 +118,10 @@ foreach ($file in $topLevelFiles) {
     Copy-PathIfExists (Join-Path $resolvedProjectDir $file) $stageProjectDir
 }
 
-$backendStage = Join-Path $stageProjectDir "backend"
-New-Item -ItemType Directory -Force -Path $backendStage | Out-Null
-Copy-PathIfExists (Join-Path $resolvedProjectDir "backend\devops") $backendStage
 Copy-PathIfExists (Join-Path $resolvedProjectDir "backend\Dockerfile.prebuilt") $backendStage
 Copy-PathIfExists (Join-Path $resolvedProjectDir "backend\sql") $backendStage
 Copy-PathIfExists (Join-Path $resolvedProjectDir "backend\config") $backendStage
 
-$frontendStage = Join-Path $stageProjectDir "frontend"
-New-Item -ItemType Directory -Force -Path $frontendStage | Out-Null
 Copy-PathIfExists (Join-Path $resolvedProjectDir "frontend\Dockerfile.prebuilt") $frontendStage
 Copy-PathIfExists (Join-Path $resolvedProjectDir "frontend\nginx.conf") $frontendStage
 Copy-PathIfExists (Join-Path $resolvedProjectDir "frontend\dist") $frontendStage
@@ -122,6 +154,11 @@ finally {
 
 if (-not $KeepStageDir -and (Test-Path $stageRoot)) {
     Remove-Item -LiteralPath $stageRoot -Recurse -Force
+}
+
+if ($cleanupNodeModules -and (Test-Path -LiteralPath $frontendNodeModules)) {
+    Write-Step "清理临时安装的前端依赖"
+    cmd /c rmdir /s /q $frontendNodeModules | Out-Null
 }
 
 Write-Step "完成: $archivePath"

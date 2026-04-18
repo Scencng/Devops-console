@@ -3,43 +3,74 @@
     <el-card class="page-header-card">
       <div class="page-header">
         <div>
-          <h2>Consumer Group 管理</h2>
-          <p>查看消费组汇总与分区级 Lag 明细，并支持按时间 / 最前 / 最后 / 指定 Offset 重置</p>
+          <div class="page-eyebrow">Consumer Groups</div>
+          <h2>消费组管理</h2>
+          <p>观察消费组状态、Lag 与分区明细，并在必要时执行 Offset 干预。</p>
         </div>
-        <div class="header-actions">
+      </div>
+    </el-card>
+
+    <div class="page-metrics">
+      <div class="page-metric-card is-accent">
+        <span>当前集群</span>
+        <strong>{{ currentClusterName }}</strong>
+        <p>本页当前正在观测的 Kafka 集群。</p>
+      </div>
+      <div class="page-metric-card">
+        <span>消费组数量</span>
+        <strong>{{ groupStats.total }}</strong>
+        <p>当前筛选条件下返回的消费组数。</p>
+      </div>
+      <div class="page-metric-card is-success">
+        <span>稳定状态</span>
+        <strong>{{ groupStats.stable }}</strong>
+        <p>状态为 Stable 的消费组数量。</p>
+      </div>
+      <div class="page-metric-card is-warning">
+        <span>总 Lag</span>
+        <strong>{{ groupStats.totalLag }}</strong>
+        <p>所有消费组累计的已提交 Lag。</p>
+      </div>
+    </div>
+
+    <el-card class="content-card filter-card">
+      <div class="toolbar-row">
+        <div class="toolbar-left">
           <el-select
             v-model="selectedClusterId"
             placeholder="选择 Kafka 集群"
-            style="width: 260px"
+            style="width: 300px"
             @change="loadGroups"
           >
-            <el-option
-              v-for="cluster in clusters"
-              :key="cluster.id"
-              :label="cluster.name"
-              :value="cluster.id"
-            />
+            <el-option v-for="cluster in clusters" :key="cluster.id" :label="cluster.name" :value="cluster.id" />
           </el-select>
           <el-input
             v-model="keyword"
             placeholder="搜索消费组"
-            style="width: 220px"
+            style="width: 240px"
             clearable
             @keyup.enter="loadGroups"
           />
+        </div>
+        <div class="toolbar-right">
           <el-button @click="loadGroups" :loading="loading">刷新</el-button>
         </div>
       </div>
     </el-card>
 
     <el-card class="content-card" v-loading="loading">
+      <template #header>
+        <div class="card-header">
+          <span>消费组列表</span>
+          <span class="card-subtitle">先看状态与 Lag，再进入分区级明细处理问题</span>
+        </div>
+      </template>
+
       <el-table :data="groups" empty-text="暂无 Consumer Group 数据">
         <el-table-column prop="groupId" label="消费组" min-width="220" />
         <el-table-column prop="state" label="状态" width="120">
           <template #default="{ row }">
-            <el-tag :type="row.state === 'Stable' ? 'success' : 'warning'">
-              {{ row.state || 'Unknown' }}
-            </el-tag>
+            <el-tag :type="row.state === 'Stable' ? 'success' : 'warning'">{{ row.state || 'Unknown' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="protocolType" label="协议类型" width="140" />
@@ -169,7 +200,7 @@
           <el-switch v-model="resetForm.allPartitions" />
           <span class="switch-label">应用到该 Topic 的全部分区</span>
         </el-form-item>
-        <el-form-item label="Partition" prop="partition" v-if="!resetForm.allPartitions">
+        <el-form-item v-if="!resetForm.allPartitions" label="Partition" prop="partition">
           <el-input-number v-model="resetForm.partition" :min="0" style="width: 100%" />
         </el-form-item>
         <el-form-item label="重置方式" prop="resetType">
@@ -180,10 +211,10 @@
             <el-option label="按时间戳" value="timestamp" />
           </el-select>
         </el-form-item>
-        <el-form-item label="指定 Offset" prop="offset" v-if="resetForm.resetType === 'offset'">
+        <el-form-item v-if="resetForm.resetType === 'offset'" label="指定 Offset" prop="offset">
           <el-input-number v-model="resetForm.offset" :min="0" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="按时间查找 Offset" prop="timestampMs" v-if="resetForm.resetType === 'timestamp'">
+        <el-form-item v-if="resetForm.resetType === 'timestamp'" label="按时间查找 Offset" prop="timestampMs">
           <el-date-picker
             v-model="resetForm.timestampMs"
             type="datetime"
@@ -246,6 +277,16 @@ const resetForm = reactive({
   offset: 0,
   timestampMs: '',
 })
+
+const currentClusterName = computed(
+  () => clusters.value.find((item) => item.id === selectedClusterId.value)?.name || '-',
+)
+
+const groupStats = computed(() => ({
+  total: groups.value.length,
+  stable: groups.value.filter((item) => item.state === 'Stable').length,
+  totalLag: groups.value.reduce((sum, item) => sum + Number(item.committedLag || 0), 0),
+}))
 
 const topicOptions = computed(() => activeGroup.value?.topics || detailData.value?.topics || [])
 

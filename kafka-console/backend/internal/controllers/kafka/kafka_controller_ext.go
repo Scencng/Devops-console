@@ -91,102 +91,6 @@ func (c *Controller) ProduceMessage(ctx *gin.Context) {
 	helper.SuccessWithData("消息发送成功", "data", data)
 }
 
-func (c *Controller) ListACLs(ctx *gin.Context) {
-	helper := utils.NewResponseHelper(ctx)
-	var req reqKafka.ACLListRequest
-	if err := ctx.ShouldBindQuery(&req); err != nil {
-		helper.BadRequest("请求参数错误: " + err.Error())
-		return
-	}
-	data, err := c.service.ListACLs(req)
-	if err != nil {
-		helper.InternalError(err.Error())
-		return
-	}
-	helper.SuccessWithData("查询成功", "data", data)
-}
-
-func (c *Controller) CreateACL(ctx *gin.Context) {
-	helper := utils.NewResponseHelper(ctx)
-	var req reqKafka.ACLUpsertRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		helper.BadRequest("请求参数错误: " + err.Error())
-		return
-	}
-	data, err := c.service.CreateACL(req)
-	if err != nil {
-		c.writeAuditLog(ctx, req.ClusterID, "acl:create", "acl", req.ResourceName, req, "failed", err.Error())
-		helper.InternalError(err.Error())
-		return
-	}
-	c.writeAuditLog(ctx, req.ClusterID, "acl:create", "acl", req.ResourceName, req, "success", "")
-	helper.SuccessWithData("ACL 创建成功", "data", data)
-}
-
-func (c *Controller) DeleteACL(ctx *gin.Context) {
-	helper := utils.NewResponseHelper(ctx)
-	var req reqKafka.ACLDeleteRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		helper.BadRequest("请求参数错误: " + err.Error())
-		return
-	}
-	data, err := c.service.DeleteACL(req)
-	if err != nil {
-		c.writeAuditLog(ctx, req.ClusterID, "acl:delete", "acl", req.ResourceName, req, "failed", err.Error())
-		helper.InternalError(err.Error())
-		return
-	}
-	c.writeAuditLog(ctx, req.ClusterID, "acl:delete", "acl", req.ResourceName, req, "success", "")
-	helper.SuccessWithData("ACL 删除成功", "data", data)
-}
-
-func (c *Controller) ListScramUsers(ctx *gin.Context) {
-	helper := utils.NewResponseHelper(ctx)
-	var req reqKafka.ScramUserListRequest
-	if err := ctx.ShouldBindQuery(&req); err != nil {
-		helper.BadRequest("请求参数错误: " + err.Error())
-		return
-	}
-	data, err := c.service.ListScramUsers(req)
-	if err != nil {
-		helper.InternalError(err.Error())
-		return
-	}
-	helper.SuccessWithData("查询成功", "data", data)
-}
-
-func (c *Controller) UpsertScramUser(ctx *gin.Context) {
-	helper := utils.NewResponseHelper(ctx)
-	var req reqKafka.ScramUserUpsertRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		helper.BadRequest("请求参数错误: " + err.Error())
-		return
-	}
-	if err := c.service.UpsertScramUser(req); err != nil {
-		c.writeAuditLog(ctx, req.ClusterID, "scram:user:upsert", "scram_user", req.Username, sanitizeScramUserPayload(req), "failed", err.Error())
-		helper.InternalError(err.Error())
-		return
-	}
-	c.writeAuditLog(ctx, req.ClusterID, "scram:user:upsert", "scram_user", req.Username, sanitizeScramUserPayload(req), "success", "")
-	helper.SuccessWithData("SCRAM 用户已保存", "data", nil)
-}
-
-func (c *Controller) DeleteScramUser(ctx *gin.Context) {
-	helper := utils.NewResponseHelper(ctx)
-	var req reqKafka.ScramUserDeleteRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		helper.BadRequest("请求参数错误: " + err.Error())
-		return
-	}
-	if err := c.service.DeleteScramUser(req); err != nil {
-		c.writeAuditLog(ctx, req.ClusterID, "scram:user:delete", "scram_user", req.Username, req, "failed", err.Error())
-		helper.InternalError(err.Error())
-		return
-	}
-	c.writeAuditLog(ctx, req.ClusterID, "scram:user:delete", "scram_user", req.Username, req, "success", "")
-	helper.SuccessWithData("SCRAM 用户已删除", "data", nil)
-}
-
 func sanitizeClusterPayload(req reqKafka.ClusterUpsertRequest) map[string]interface{} {
 	return map[string]interface{}{
 		"name":               req.Name,
@@ -226,13 +130,5 @@ func sanitizeProduceMessagePayload(req reqKafka.MessageProduceRequest) map[strin
 		"headerCount":   len(req.Headers),
 		"hasKey":        req.Key != "",
 		"valueBytes":    len(req.Value),
-	}
-}
-
-func sanitizeScramUserPayload(req reqKafka.ScramUserUpsertRequest) map[string]interface{} {
-	return map[string]interface{}{
-		"username":   req.Username,
-		"mechanism":  req.Mechanism,
-		"iterations": req.Iterations,
 	}
 }

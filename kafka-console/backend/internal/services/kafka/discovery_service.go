@@ -83,7 +83,7 @@ func (s *Service) ScanKafkaNetwork(req reqKafka.DiscoveryScanRequest) ([]respons
 func (s *Service) ImportDiscoveredKafka(req reqKafka.DiscoveryImportRequest) (*response.KafkaClusterVO, error) {
 	version := strings.TrimSpace(req.Auth.Version)
 	if version == "" {
-		detectedVersion, detectErr := detectKafkaVersion(req.Address, req.Auth, 2500*time.Millisecond)
+		detectedVersion, detectErr := detectKafkaVersionForBootstrapServers(req.Address, req.Auth, 2500*time.Millisecond)
 		if detectErr != nil {
 			return nil, fmt.Errorf("Kafka 版本自动探测失败，请手动填写版本后再导入: %w", detectErr)
 		}
@@ -172,6 +172,7 @@ func (s *Service) probeKafkaEndpoint(ip string, port int, timeout time.Duration,
 	}
 
 	listeners := make([]string, 0, len(metaResp.Brokers))
+	matchedAdvertisedBroker := false
 	for _, item := range metaResp.Brokers {
 		if item == nil {
 			continue
@@ -180,14 +181,35 @@ func (s *Service) probeKafkaEndpoint(ip string, port int, timeout time.Duration,
 		listeners = append(listeners, addr)
 		if item.Addr() == address || strings.HasPrefix(item.Addr(), ip+":") {
 			result.BrokerID = item.ID()
+			matchedAdvertisedBroker = true
 		}
 	}
 	sort.Strings(listeners)
 	result.Listeners = listeners
+	result.AdvertisedBroker = matchedAdvertisedBroker
 	if versionDetectError != "" && result.ErrorMessage == "" {
 		result.ErrorMessage = "Kafka 版本自动探测失败，但已按兼容协议完成识别"
 	}
 	return result
+}
+
+func detectKafkaVersionForBootstrapServers(addresses string, auth reqKafka.DiscoveryAuthTemplateRequest, timeout time.Duration) (string, error) {
+	candidates := normalizeBootstrapServers(addresses)
+	if len(candidates) == 0 {
+		return "", errors.New("未提供可用的 bootstrap servers")
+	}
+	var lastErr error
+	for _, address := range candidates {
+		version, err := detectKafkaVersion(address, auth, timeout)
+		if err == nil {
+			return version, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = errors.New("未能自动探测 Kafka 版本")
+	}
+	return "", lastErr
 }
 
 func detectKafkaVersion(address string, auth reqKafka.DiscoveryAuthTemplateRequest, timeout time.Duration) (string, error) {

@@ -3,7 +3,7 @@ package kafka
 type MessageBrowseRequest struct {
 	ClusterID uint   `form:"clusterId" json:"clusterId" binding:"required"`
 	Topic     string `form:"topic" json:"topic" binding:"required,max=255"`
-	Partition int32  `form:"partition" json:"partition" binding:"required,min=0"`
+	Partition *int32 `form:"partition" json:"partition" binding:"omitempty,min=0"`
 	Mode      string `form:"mode" json:"mode" binding:"omitempty,oneof=earliest latest offset"`
 	Offset    int64  `form:"offset" json:"offset"`
 	Limit     int    `form:"limit" json:"limit" binding:"omitempty,min=1,max=500"`

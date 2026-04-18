@@ -5,6 +5,7 @@ type KafkaDiscoveryResultVO struct {
 	Port               int      `json:"port"`
 	Address            string   `json:"address"`
 	LooksLikeKafka     bool     `json:"looksLikeKafka"`
+	AdvertisedBroker   bool     `json:"advertisedBroker"`
 	KafkaVersion       string   `json:"kafkaVersion"`
 	BrokerID           int32    `json:"brokerId"`
 	ClusterID          string   `json:"clusterId"`

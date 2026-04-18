@@ -188,31 +188,6 @@ func (c *Controller) ListAuditLogs(ctx *gin.Context) {
 	helper.SuccessWithData("查询成功", "data", data)
 }
 
-func (c *Controller) GetPrometheusPanels(ctx *gin.Context) {
-	helper := utils.NewResponseHelper(ctx)
-	data, err := c.service.GetPrometheusPanels()
-	if err != nil { helper.InternalError(err.Error()); return }
-	helper.SuccessWithData("查询成功", "data", data)
-}
-
-func (c *Controller) QueryPrometheus(ctx *gin.Context) {
-	helper := utils.NewResponseHelper(ctx)
-	var req reqKafka.PrometheusQueryRequest
-	if err := ctx.ShouldBindQuery(&req); err != nil { helper.BadRequest("请求参数错误: " + err.Error()); return }
-	data, err := c.service.QueryPrometheus(req.Query, req.Time)
-	if err != nil { helper.InternalError(err.Error()); return }
-	helper.SuccessWithData("查询成功", "data", data)
-}
-
-func (c *Controller) QueryPrometheusRange(ctx *gin.Context) {
-	helper := utils.NewResponseHelper(ctx)
-	var req reqKafka.PrometheusQueryRangeRequest
-	if err := ctx.ShouldBindQuery(&req); err != nil { helper.BadRequest("请求参数错误: " + err.Error()); return }
-	data, err := c.service.QueryPrometheusRange(req.Query, req.Start, req.End, req.Step)
-	if err != nil { helper.InternalError(err.Error()); return }
-	helper.SuccessWithData("查询成功", "data", data)
-}
-
 func (c *Controller) GetDashboard(ctx *gin.Context) {
 	helper := utils.NewResponseHelper(ctx)
 	var req reqKafka.ClusterQueryRequest

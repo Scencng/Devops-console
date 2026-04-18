@@ -1,4 +1,4 @@
-FROM docker.m.daocloud.io/library/golang:1.25-alpine AS builder
+FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/golang:1.25-alpine AS builder
 
 WORKDIR /build
 ENV GOPROXY=https://goproxy.cn,direct
@@ -11,7 +11,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o devops ./cmd/server
 
 
-FROM docker.m.daocloud.io/library/alpine:3.20.2
+FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/alpine:3.20.2
 ENV TZ=Asia/Shanghai
 WORKDIR /app
 

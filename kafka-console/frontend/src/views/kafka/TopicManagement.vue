@@ -3,22 +3,46 @@
     <el-card class="page-header-card">
       <div class="page-header">
         <div>
+          <div class="page-eyebrow">Topics</div>
           <h2>Topic 管理</h2>
-          <p>创建 Topic、扩分区、查看 ISR/副本分配，并执行配置修改等高风险操作</p>
+          <p>围绕 Topic 生命周期、分区扩容和配置变更组织日常操作，减少高风险操作时的切换成本。</p>
         </div>
-        <div class="header-actions">
+      </div>
+    </el-card>
+
+    <div class="page-metrics">
+      <div class="page-metric-card is-accent">
+        <span>当前集群</span>
+        <strong>{{ selectedClusterName }}</strong>
+        <p>当前正在查看和操作的 Kafka 集群。</p>
+      </div>
+      <div class="page-metric-card">
+        <span>Topic 总数</span>
+        <strong>{{ topicStats.total }}</strong>
+        <p>当前集群下匹配筛选条件的 Topic 数量。</p>
+      </div>
+      <div class="page-metric-card is-warning">
+        <span>内部 Topic</span>
+        <strong>{{ topicStats.internal }}</strong>
+        <p>这部分 Topic 默认不建议做删除类操作。</p>
+      </div>
+      <div class="page-metric-card is-success">
+        <span>总分区数</span>
+        <strong>{{ topicStats.partitions }}</strong>
+        <p>快速感知当前集群 Topic 的分区规模。</p>
+      </div>
+    </div>
+
+    <el-card class="content-card filter-card">
+      <div class="toolbar-row">
+        <div class="toolbar-left">
           <el-select
             v-model="selectedClusterId"
             placeholder="选择 Kafka 集群"
-            style="width: 260px"
+            style="width: 280px"
             @change="loadTopics"
           >
-            <el-option
-              v-for="cluster in clusters"
-              :key="cluster.id"
-              :label="cluster.name"
-              :value="cluster.id"
-            />
+            <el-option v-for="cluster in clusters" :key="cluster.id" :label="cluster.name" :value="cluster.id" />
           </el-select>
           <el-input
             v-model="keyword"
@@ -27,6 +51,8 @@
             clearable
             @keyup.enter="loadTopics"
           />
+        </div>
+        <div class="toolbar-right">
           <el-button @click="loadTopics" :loading="loading">刷新</el-button>
           <el-button
             v-if="permStore.hasPerm('kafka:topic:create') || permStore.roles.includes('admin')"
@@ -40,6 +66,13 @@
     </el-card>
 
     <el-card class="content-card" v-loading="loading">
+      <template #header>
+        <div class="card-header">
+          <span>Topic 列表</span>
+          <span class="card-subtitle">查看分区、副本、保留策略以及高风险操作入口</span>
+        </div>
+      </template>
+
       <el-table :data="topics" empty-text="暂无 Topic 数据">
         <el-table-column prop="name" label="Topic" min-width="220" />
         <el-table-column prop="partitions" label="分区数" width="110" />
@@ -49,36 +82,34 @@
         <el-table-column prop="minInSyncReplicas" label="Min ISR" width="120" />
         <el-table-column label="内部 Topic" width="120">
           <template #default="{ row }">
-            <el-tag :type="row.internal ? 'warning' : 'success'">
-              {{ row.internal ? '是' : '否' }}
-            </el-tag>
+            <el-tag :type="row.internal ? 'warning' : 'success'">{{ row.internal ? '是' : '否' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" min-width="360" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openPartitionsDrawer(row)">ISR / 副本</el-button>
             <el-button
+              v-if="permStore.hasPerm('kafka:topic:partitions:increase') || permStore.roles.includes('admin')"
               link
               type="primary"
               @click="openExpandDialog(row)"
-              v-if="permStore.hasPerm('kafka:topic:partitions:increase') || permStore.roles.includes('admin')"
             >
               扩分区
             </el-button>
             <el-button
+              v-if="permStore.hasPerm('kafka:topic:config:update') || permStore.roles.includes('admin')"
               link
               type="primary"
               @click="openConfigDialog(row)"
-              v-if="permStore.hasPerm('kafka:topic:config:update') || permStore.roles.includes('admin')"
             >
               修改配置
             </el-button>
             <el-button
+              v-if="permStore.hasPerm('kafka:topic:delete') || permStore.roles.includes('admin')"
               link
               type="danger"
               :disabled="row.internal"
               @click="handleDelete(row)"
-              v-if="permStore.hasPerm('kafka:topic:delete') || permStore.roles.includes('admin')"
             >
               删除
             </el-button>
@@ -88,12 +119,7 @@
     </el-card>
 
     <el-dialog v-model="createDialogVisible" title="创建 Topic" width="760px" destroy-on-close>
-      <el-form
-        ref="createFormRef"
-        :model="createForm"
-        :rules="createRules"
-        label-position="top"
-      >
+      <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-position="top">
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="Topic 名称" prop="name">
@@ -233,9 +259,7 @@
               <template #default="{ row }">{{ formatIntList(row.isr) }}</template>
             </el-table-column>
             <el-table-column label="掉队副本" min-width="170">
-              <template #default="{ row }">
-                <span>{{ formatIntList(row.outOfSyncReplicas) }}</span>
-              </template>
+              <template #default="{ row }">{{ formatIntList(row.outOfSyncReplicas) }}</template>
             </el-table-column>
             <el-table-column label="离线副本" min-width="170">
               <template #default="{ row }">{{ formatIntList(row.offlineReplicas) }}</template>
@@ -244,9 +268,7 @@
             <el-table-column prop="messageCountEstimate" label="消息量估算" width="130" />
             <el-table-column label="状态" width="120">
               <template #default="{ row }">
-                <el-tag :type="row.underReplicated ? 'danger' : 'success'">
-                  {{ row.underReplicated ? '异常' : '正常' }}
-                </el-tag>
+                <el-tag :type="row.underReplicated ? 'danger' : 'success'">{{ row.underReplicated ? '异常' : '正常' }}</el-tag>
               </template>
             </el-table-column>
           </el-table>
@@ -257,7 +279,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createKafkaTopic,
@@ -317,6 +339,17 @@ const createRules = {
 }
 
 const emptyConfigRow = () => ({ key: '', operation: 'set', value: '' })
+
+const selectedClusterName = computed(() => {
+  const current = clusters.value.find((item) => item.id === selectedClusterId.value)
+  return current?.name || '未选择'
+})
+
+const topicStats = computed(() => ({
+  total: topics.value.length,
+  internal: topics.value.filter((item) => item.internal).length,
+  partitions: topics.value.reduce((sum, item) => sum + Number(item.partitions || 0), 0),
+}))
 
 const resetCreateForm = () => {
   createForm.name = ''

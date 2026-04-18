@@ -37,7 +37,5 @@ func RegisterKafkaRouters(apiGroup *gin.RouterGroup) {
 		kafkaGroup.GET("/audit-logs", controller.ListAuditLogs)
 		kafkaGroup.POST("/discovery/scan", controller.ScanKafkaNetwork)
 		kafkaGroup.POST("/discovery/import", controller.ImportDiscoveredKafka)
-		kafkaGroup.GET("/prometheus/panels", controller.GetPrometheusPanels)
-		kafkaGroup.GET("/prometheus/query-range", controller.QueryPrometheusRange)
 	}
 }

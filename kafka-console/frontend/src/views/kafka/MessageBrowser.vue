@@ -358,6 +358,10 @@ const handleProduceClusterChange = async () => {
 
 const loadMessages = async () => {
   if (!form.clusterId || !form.topic) return
+  if (partitionOptions.value.length === 0) return
+  if (!partitionOptions.value.includes(Number(form.partition))) {
+    form.partition = partitionOptions.value[0]
+  }
   loading.value = true
   try {
     const res = await getKafkaMessages(form)

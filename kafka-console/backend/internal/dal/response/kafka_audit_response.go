@@ -20,24 +20,3 @@ type KafkaAuditLogListVO struct {
 	Total int64             `json:"total"`
 	List  []KafkaAuditLogVO `json:"list"`
 }
-
-type KafkaPrometheusCardVO struct {
-	Name  string  `json:"name"`
-	Query string  `json:"query"`
-	Value float64 `json:"value"`
-}
-
-type KafkaPrometheusPointVO struct {
-	Timestamp int64   `json:"timestamp"`
-	Value     float64 `json:"value"`
-}
-
-type KafkaPrometheusSeriesVO struct {
-	Metric string                    `json:"metric"`
-	Points []KafkaPrometheusPointVO  `json:"points"`
-}
-
-type KafkaPrometheusPanelVO struct {
-	Cards     []KafkaPrometheusCardVO  `json:"cards"`
-	LagSeries []KafkaPrometheusSeriesVO `json:"lagSeries"`
-}

@@ -41,11 +41,23 @@ func (s *Service) BrowseMessages(req reqKafka.MessageBrowseRequest) (*response.K
 		mode = "latest"
 	}
 
-	oldest, err := client.GetOffset(req.Topic, req.Partition, sarama.OffsetOldest)
+	partitions, err := client.Partitions(req.Topic)
 	if err != nil {
 		return nil, err
 	}
-	newest, err := client.GetOffset(req.Topic, req.Partition, sarama.OffsetNewest)
+	if len(partitions) == 0 {
+		return nil, errors.New("当前 Topic 没有可用分区")
+	}
+	partition := partitions[0]
+	if req.Partition != nil {
+		partition = *req.Partition
+	}
+
+	oldest, err := client.GetOffset(req.Topic, partition, sarama.OffsetOldest)
+	if err != nil {
+		return nil, err
+	}
+	newest, err := client.GetOffset(req.Topic, partition, sarama.OffsetNewest)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +81,7 @@ func (s *Service) BrowseMessages(req reqKafka.MessageBrowseRequest) (*response.K
 		startOffset = oldest
 	}
 
-	partitionConsumer, err := consumer.ConsumePartition(req.Topic, req.Partition, startOffset)
+	partitionConsumer, err := consumer.ConsumePartition(req.Topic, partition, startOffset)
 	if err != nil {
 		return nil, err
 	}
@@ -97,13 +109,13 @@ func (s *Service) BrowseMessages(req reqKafka.MessageBrowseRequest) (*response.K
 			}
 			messages = append(messages, response.KafkaMessageVO{Offset: msg.Offset, Partition: msg.Partition, Timestamp: msg.Timestamp, KeyPreview: keyPreview, ValuePreview: valuePreview, KeyBase64: keyBase64, ValueBase64: valueBase64, Headers: headers})
 		case <-deadline:
-			return &response.KafkaMessageBrowseVO{Topic: req.Topic, Partition: req.Partition, StartOffset: startOffset, Count: len(messages), Messages: messages}, nil
+			return &response.KafkaMessageBrowseVO{Topic: req.Topic, Partition: partition, StartOffset: startOffset, Count: len(messages), Messages: messages}, nil
 		case <-partitionConsumer.Errors():
 			continue
 		}
 	}
 
-	return &response.KafkaMessageBrowseVO{Topic: req.Topic, Partition: req.Partition, StartOffset: startOffset, Count: len(messages), Messages: messages}, nil
+	return &response.KafkaMessageBrowseVO{Topic: req.Topic, Partition: partition, StartOffset: startOffset, Count: len(messages), Messages: messages}, nil
 }
 
 func (s *Service) ProduceMessage(req reqKafka.MessageProduceRequest) (*response.KafkaMessageProduceVO, error) {

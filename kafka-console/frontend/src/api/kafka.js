@@ -30,6 +30,3 @@ export const getKafkaMessages = (params) => api.get('/kafka/messages', { params 
 export const produceKafkaMessage = (data) => api.post('/kafka/messages/produce', data)
 
 export const getKafkaAuditLogs = (params) => api.get('/kafka/audit-logs', { params })
-
-export const getKafkaPrometheusPanels = () => api.get('/kafka/prometheus/panels')
-export const queryKafkaPrometheusRange = (params) => api.get('/kafka/prometheus/query-range', { params })

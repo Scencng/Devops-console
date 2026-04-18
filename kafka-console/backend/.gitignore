@@ -16,6 +16,7 @@ gen
 *.dll
 *.so
 *.dylib
+devops
 
 # Test binary, built with `go test -c`
 *.test
