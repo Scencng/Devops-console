@@ -1,0 +1,13 @@
+FROM docker.m.daocloud.io/library/alpine:3.20.2
+
+ENV TZ=Asia/Shanghai
+WORKDIR /app
+
+COPY devops ./
+COPY config/ ./config/
+
+RUN chmod +x ./devops
+
+EXPOSE 8081
+
+CMD ["./devops"]

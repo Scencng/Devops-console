@@ -1,0 +1,53 @@
+# Kafka Console 配置文件
+server:
+  port: ":8081"
+  log_level: "info"
+
+database:
+  type: "mysql"
+  auto_migrate: true
+  mysql:
+    host: "127.0.0.1"
+    port: 3306
+    username: "root"
+    password: "123456"
+    database: "kafka_console"
+    charset: "utf8mb4"
+    parse_time: true
+    max_open_conns: 10
+    max_idle_conns: 5
+
+logging:
+  format: "json"
+  time_format: "2006-01-02 15:04:05"
+  report_caller: true
+
+prometheus:
+  base_url: "http://127.0.0.1:9091"
+  timeout: 10
+
+swagger:
+  enabled: true
+  host: "localhost:8081"
+  base_path: "/"
+
+health:
+  enabled: true
+  endpoint: "/health"
+  interval: 30
+
+redis:
+  host: 127.0.0.1
+  port: 6379
+  password: "123456"
+  db: 0
+
+jwt:
+  secret: "replace-with-your-own-secret"
+  expire-time: 3600
+  refresh-expire-time: 604800
+  exclude-paths:
+    - /api/v1/system/login
+    - /swagger/*
+    - /metrics
+    - /health

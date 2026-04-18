@@ -1,0 +1,638 @@
+/**
+ * AutoOps 样式主题
+ * 清新浅色企业级设计风格
+ * 核心特色：彩色圆形操作按钮、简洁卡片设计
+ */
+
+/* ==========================================
+   一、全局主题变量
+   ========================================== */
+:root {
+    /* 主色调 - 清新蓝色系 */
+    --autoops-primary: #409EFF;
+    --autoops-primary-light: #66b1ff;
+    --autoops-primary-lighter: #ecf5ff;
+
+    /* 功能色 */
+    --autoops-success: #67C23A;
+    --autoops-warning: #E6A23C;
+    --autoops-danger: #F56C6C;
+    --autoops-info: #909399;
+
+    /* 背景色 */
+    --autoops-bg-page: #f5f7fa;
+    --autoops-bg-card: #ffffff;
+    --autoops-bg-hover: #f5f7fa;
+
+    /* 边框颜色 */
+    --autoops-border-base: #e4e7ed;
+    --autoops-border-light: #ebeef5;
+    --autoops-border-lighter: #f2f6fc;
+
+    /* 文字颜色 */
+    --autoops-text-primary: #303133;
+    --autoops-text-regular: #606266;
+    --autoops-text-secondary: #909399;
+    --autoops-text-placeholder: #c0c4cc;
+
+    /* 阴影 */
+    --autoops-shadow-light: 0 2px 4px rgba(0, 0, 0, 0.04);
+    --autoops-shadow-base: 0 2px 12px rgba(0, 0, 0, 0.08);
+    --autoops-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.12);
+
+    /* 圆角 */
+    --autoops-radius-small: 4px;
+    --autoops-radius-base: 8px;
+    --autoops-radius-large: 12px;
+
+    /* 间距 */
+    --autoops-spacing-xs: 4px;
+    --autoops-spacing-sm: 8px;
+    --autoops-spacing-md: 16px;
+    --autoops-spacing-lg: 24px;
+    --autoops-spacing-xl: 32px;
+}
+
+/* ==========================================
+   二、页面布局
+   ========================================== */
+
+/* 页面背景 */
+body {
+    background-color: var(--autoops-bg-page) !important;
+}
+
+/* 主容器 */
+.autoops-container {
+    padding: var(--autoops-spacing-lg);
+    background-color: var(--autoops-bg-page);
+}
+
+/* ==========================================
+   三、卡片样式
+   ========================================== */
+
+.autoops-card {
+    background: var(--autoops-bg-card);
+    border-radius: var(--autoops-radius-large);
+    border: 1px solid var(--autoops-border-light);
+    box-shadow: var(--autoops-shadow-light);
+    transition: all 0.3s ease;
+}
+
+.autoops-card:hover {
+    box-shadow: var(--autoops-shadow-base);
+}
+
+/* 卡片内边距 */
+.autoops-card-body {
+    padding: var(--autoops-spacing-lg);
+}
+
+/* ==========================================
+   四、筛选栏样式
+   ========================================== */
+
+.autoops-filter-bar {
+    background: var(--autoops-bg-card);
+    padding: var(--autoops-spacing-md);
+    border-radius: var(--autoops-radius-base);
+    margin-bottom: var(--autoops-spacing-md);
+    display: flex;
+    align-items: center;
+    gap: var(--autoops-spacing-sm);
+    flex-wrap: wrap;
+}
+
+/* 筛选标签 */
+.autoops-filter-label {
+    font-size: 14px;
+    color: var(--autoops-text-regular);
+    white-space: nowrap;
+}
+
+/* 输入框统一样式 */
+.autoops-input .el-input__wrapper {
+    border-radius: var(--autoops-radius-base) !important;
+    border-color: var(--autoops-border-base);
+    box-shadow: none;
+    transition: all 0.3s ease;
+}
+
+.autoops-input .el-input__wrapper:hover {
+    border-color: var(--autoops-primary-light);
+}
+
+.autoops-input .el-input__wrapper.is-focus {
+    border-color: var(--autoops-primary);
+    box-shadow: 0 0 0 2px var(--autoops-primary-lighter);
+}
+
+/* 选择器统一样式 */
+.autoops-select .el-select__wrapper {
+    border-radius: var(--autoops-radius-base) !important;
+    border-color: var(--autoops-border-base);
+    box-shadow: none;
+}
+
+/* ==========================================
+   五、按钮样式
+   ========================================== */
+
+/* 主按钮 */
+.autoops-btn-primary {
+    background-color: var(--autoops-primary) !important;
+    border-color: var(--autoops-primary) !important;
+    color: white !important;
+    border-radius: var(--autoops-radius-base) !important;
+    font-weight: 500;
+    padding: 10px 20px;
+    transition: all 0.3s ease;
+}
+
+.autoops-btn-primary:hover {
+    background-color: var(--autoops-primary-light) !important;
+    transform: translateY(-1px);
+    box-shadow: var(--autoops-shadow-base);
+}
+
+/* 次要按钮 */
+.autoops-btn-secondary {
+    background-color: white !important;
+    border: 1px solid var(--autoops-border-base) !important;
+    color: var(--autoops-text-regular) !important;
+    border-radius: var(--autoops-radius-base) !important;
+    transition: all 0.3s ease;
+}
+
+.autoops-btn-secondary:hover {
+    border-color: var(--autoops-primary) !important;
+    color: var(--autoops-primary) !important;
+}
+
+/* 成功按钮 */
+.autoops-btn-success {
+    background-color: var(--autoops-success) !important;
+    border-color: var(--autoops-success) !important;
+    color: white !important;
+    border-radius: var(--autoops-radius-base) !important;
+}
+
+/* ==========================================
+   六、★ 核心特色：彩色圆形操作按钮
+   ========================================== */
+
+/* 操作按钮容器 */
+.autoops-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
+}
+
+/* 基础圆形按钮样式 */
+.autoops-action-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0 !important;
+    border-radius: 50% !important;
+    border: none !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    position: relative;
+    overflow: hidden;
+}
+
+.autoops-action-btn:hover {
+    transform: scale(1.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.autoops-action-btn:active {
+    transform: scale(0.95);
+}
+
+/* 查看/详情 - 蓝色 */
+.autoops-action-btn.view {
+    background: linear-gradient(135deg, #409EFF 0%, #66b1ff 100%) !important;
+    color: white !important;
+}
+
+.autoops-action-btn.view:hover {
+    background: linear-gradient(135deg, #66b1ff 0%, #409EFF 100%) !important;
+    box-shadow: 0 4px 12px rgba(64, 158, 255, 0.4);
+}
+
+/* 编辑 - 橙色 */
+.autoops-action-btn.edit {
+    background: linear-gradient(135deg, #E6A23C 0%, #f0b24e 100%) !important;
+    color: white !important;
+}
+
+.autoops-action-btn.edit:hover {
+    background: linear-gradient(135deg, #f0b24e 0%, #E6A23C 100%) !important;
+    box-shadow: 0 4px 12px rgba(230, 162, 60, 0.4);
+}
+
+/* 删除 - 红色 */
+.autoops-action-btn.delete {
+    background: linear-gradient(135deg, #F56C6C 0%, #f78989 100%) !important;
+    color: white !important;
+}
+
+.autoops-action-btn.delete:hover {
+    background: linear-gradient(135deg, #f78989 0%, #F56C6C 100%) !important;
+    box-shadow: 0 4px 12px rgba(245, 108, 108, 0.4);
+}
+
+/* 扩缩容/设置 - 紫色 */
+.autoops-action-btn.scale {
+    background: linear-gradient(135deg, #9B59B6 0%, #b98cc4 100%) !important;
+    color: white !important;
+}
+
+.autoops-action-btn.scale:hover {
+    box-shadow: 0 4px 12px rgba(155, 89, 182, 0.4);
+}
+
+/* Shell/终端 - 深灰 */
+.autoops-action-btn.shell {
+    background: linear-gradient(135deg, #606266 0%, #79797d 100%) !important;
+    color: white !important;
+}
+
+.autoops-action-btn.shell:hover {
+    box-shadow: 0 4px 12px rgba(96, 98, 102, 0.4);
+}
+
+/* 日志 - 浅蓝 */
+.autoops-action-btn.logs {
+    background: linear-gradient(135deg, #36CFC9 0%, #5cdbd5 100%) !important;
+    color: white !important;
+}
+
+.autoops-action-btn.logs:hover {
+    box-shadow: 0 4px 12px rgba(54, 207, 201, 0.4);
+}
+
+/* 更新镜像 - 绿色 */
+.autoops-action-btn.update {
+    background: linear-gradient(135deg, #67C23A 0%, #85ce61 100%) !important;
+    color: white !important;
+}
+
+.autoops-action-btn.update:hover {
+    box-shadow: 0 4px 12px rgba(103, 194, 58, 0.4);
+}
+
+/* 禁用状态 */
+.autoops-action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+/* ==========================================
+   七、表格样式
+   ========================================== */
+
+/* 表格容器 */
+.autoops-table-wrapper {
+    background: var(--autoops-bg-card);
+    border-radius: var(--autoops-radius-large);
+    overflow: hidden;
+    border: 1px solid var(--autoops-border-light);
+}
+
+/* 表格基础样式 */
+.autoops-table.el-table {
+    --el-table-border-color: var(--autoops-border-lighter) !important;
+    --el-table-header-bg-color: #fafafa !important;
+    --el-table-tr-bg-color: white !important;
+    --el-table-row-hover-bg-color: var(--autoops-bg-hover) !important;
+    background-color: white !important;
+    border-radius: var(--autoops-radius-large);
+    overflow: hidden;
+}
+
+/* 表头样式 */
+.autoops-table .el-table__header th {
+    background-color: #fafafa !important;
+    color: var(--autoops-text-regular);
+    font-weight: 600;
+    font-size: 13px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--autoops-border-light);
+}
+
+/* 表格单元格 */
+.autoops-table .el-table__body td {
+    padding: 12px 0;
+    color: var(--autoops-text-primary);
+    font-size: 14px;
+}
+
+/* 表格行 hover 效果 */
+.autoops-table .el-table__body tr:hover>td {
+    background-color: var(--autoops-bg-hover) !important;
+}
+
+/* 单元格内容居中 */
+.autoops-table .el-table__cell .cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+/* 第一列左对齐 */
+.autoops-table .el-table__cell:first-child .cell {
+    justify-content: flex-start;
+    padding-left: 16px;
+}
+
+/* 固定列阴影 */
+.autoops-table .el-table__fixed-right {
+    box-shadow: -4px 0 8px rgba(0, 0, 0, 0.06);
+}
+
+/* ==========================================
+   八、状态标签
+   ========================================== */
+
+.autoops-tag {
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
+}
+
+/* 成功状态 */
+.autoops-tag.success {
+    background-color: #f0f9ff;
+    color: var(--autoops-success);
+}
+
+/* 警告状态 */
+.autoops-tag.warning {
+    background-color: #fef5e7;
+    color: var(--autoops-warning);
+}
+
+/* 危险状态 */
+.autoops-tag.danger {
+    background-color: #fef0f0;
+    color: var(--autoops-danger);
+}
+
+/* 信息状态 */
+.autoops-tag.info {
+    background-color: #f4f4f5;
+    color: var(--autoops-info);
+}
+
+/* ==========================================
+   九、图标样式优化
+   ========================================== */
+
+/* 资源类型图标容器 */
+.autoops-resource-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    margin-right: 8px;
+}
+
+/* Deployment 图标 - 蓝色 */
+.autoops-resource-icon.deployment {
+    background: rgba(64, 158, 255, 0.1);
+    color: var(--autoops-primary);
+}
+
+/* StatefulSet 图标 - 紫色 */
+.autoops-resource-icon.statefulset {
+    background: rgba(155, 89, 182, 0.1);
+    color: #9B59B6;
+}
+
+/* DaemonSet 图标 - 橙色 */
+.autoops-resource-icon.daemonset {
+    background: rgba(230, 162, 60, 0.1);
+    color: var(--autoops-warning);
+}
+
+/* Job 图标 - 绿色 */
+.autoops-resource-icon.job {
+    background: rgba(103, 194, 58, 0.1);
+    color: var(--autoops-success);
+}
+
+/* CronJob 图标 - 青色 */
+.autoops-resource-icon.cronjob {
+    background: rgba(54, 207, 201, 0.1);
+    color: #36CFC9;
+}
+
+/* ==========================================
+   十、分页样式
+   ========================================== */
+
+.autoops-pagination {
+    display: flex;
+    justify-content: center;
+    padding: var(--autoops-spacing-lg) 0;
+}
+
+.autoops-pagination .el-pagination {
+    --el-pagination-button-bg-color: white;
+    --el-pagination-hover-color: var(--autoops-primary);
+}
+
+/* ==========================================
+   十一、对话框样式
+   ========================================== */
+
+.autoops-dialog .el-dialog {
+    border-radius: var(--autoops-radius-large);
+    box-shadow: var(--autoops-shadow-hover);
+}
+
+.autoops-dialog .el-dialog__header {
+    padding: var(--autoops-spacing-lg);
+    border-bottom: 1px solid var(--autoops-border-light);
+}
+
+.autoops-dialog .el-dialog__title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--autoops-text-primary);
+}
+
+.autoops-dialog .el-dialog__body {
+    padding: var(--autoops-spacing-lg);
+}
+
+/* ==========================================
+   十二、表单样式
+   ========================================== */
+
+.autoops-form .el-form-item__label {
+    color: var(--autoops-text-regular);
+    font-weight: 500;
+}
+
+.autoops-form .el-input__wrapper {
+    border-radius: var(--autoops-radius-base);
+}
+
+/* ==========================================
+   十三、自定义滚动条
+   ========================================== */
+
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.25);
+}
+
+/* ==========================================
+   十四、动画效果
+   ========================================== */
+
+/* 淡入动画 */
+@keyframes autoops-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.autoops-fade-in {
+    animation: autoops-fade-in 0.3s ease;
+}
+
+/* 脉冲动画（用于状态提示） */
+@keyframes autoops-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.autoops-pulse {
+    animation: autoops-pulse 2s ease-in-out infinite;
+}
+
+/* ==========================================
+   十五、响应式适配
+   ========================================== */
+
+@media (max-width: 768px) {
+    .autoops-filter-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .autoops-action-btn {
+        width: 28px;
+        height: 28px;
+        font-size: 12px;
+    }
+}
+
+/* ==========================================
+   十六、辅助类
+   ========================================== */
+
+/* 文字颜色 */
+.autoops-text-primary {
+    color: var(--autoops-text-primary);
+}
+
+.autoops-text-regular {
+    color: var(--autoops-text-regular);
+}
+
+.autoops-text-secondary {
+    color: var(--autoops-text-secondary);
+}
+
+/* 间距 */
+.autoops-mt-md {
+    margin-top: var(--autoops-spacing-md);
+}
+
+.autoops-mb-md {
+    margin-bottom: var(--autoops-spacing-md);
+}
+
+.autoops-ml-sm {
+    margin-left: var(--autoops-spacing-sm);
+}
+
+.autoops-mr-sm {
+    margin-right: var(--autoops-spacing-sm);
+}
+
+/* Flex 布局 */
+.autoops-flex {
+    display: flex;
+}
+
+.autoops-flex-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.autoops-flex-between {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* 文字对齐 */
+.autoops-text-center {
+    text-align: center;
+}
+
+.autoops-text-left {
+    text-align: left;
+}
+
+.autoops-text-right {
+    text-align: right;
+}

@@ -1,0 +1,61 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: your-registry.example.com/kafka-console/backend
+  tag: latest
+  pullPolicy: IfNotPresent
+
+frontendImage:
+  repository: your-registry.example.com/kafka-console/frontend
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8081
+
+backendService:
+  port: 8081
+  metricsPort: 9090
+
+ingress:
+  enabled: false
+  className: nginx
+  host: kafka-console.example.com
+  path: /
+  tls: []
+
+env:
+  TZ: Asia/Shanghai
+  PROMETHEUS_BASE_URL: http://prometheus.monitoring.svc.cluster.local:9090
+
+secretEnv:
+  MYSQL_HOST: mysql.default.svc.cluster.local
+  MYSQL_PORT: "3306"
+  MYSQL_DATABASE: kafka_console
+  MYSQL_USERNAME: root
+  MYSQL_PASSWORD: change-me
+  REDIS_HOST: redis.default.svc.cluster.local
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: change-me
+  JWT_SECRET: change-me
+
+resources:
+  backend:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  frontend:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

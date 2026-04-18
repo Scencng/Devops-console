@@ -1,0 +1,305 @@
+/* Premium / Modern Theme */
+:root {
+    /* Light Mode - Premium SaaS Look */
+    --bg-app: #f4f6f8;
+    --bg-card: #ffffff;
+    --border-color: rgba(229, 231, 235, 0.6);
+    --primary-color: #0070f3;
+    /* Vercel Blue */
+    --primary-hover: #0060df;
+    --text-main: #111827;
+    --text-sub: #6b7280;
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --radius-md: 12px;
+    --radius-lg: 16px;
+}
+
+.dark {
+    /* Dark Mode - Deep Space / Sleek */
+    --bg-app: #000000;
+    --bg-card: #111111;
+    --border-color: #333333;
+    --primary-color: #3291ff;
+    --primary-hover: #0070f3;
+    --text-main: #ededed;
+    --text-sub: #a1a1a1;
+    --shadow-sm: 0 1px 2px 0 rgba(255, 255, 255, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+}
+
+/* Base resets for cards to ensure hierarchy */
+.page-header-card,
+.content-card {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+/* The actual visual container */
+.cyber-card {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: var(--radius-lg) !important;
+    padding: 24px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Light mode specific enhancements */
+html:not(.dark) .cyber-card {
+    box-shadow: var(--shadow-sm);
+}
+
+html:not(.dark) .cyber-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+}
+
+/* Header Styling */
+.cyber-header {
+    border: none;
+    background: transparent;
+    padding: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.cyber-header h2 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    color: var(--text-main);
+    margin-bottom: 4px;
+}
+
+/* Subtext hierarchy */
+.cyber-header p {
+    color: var(--text-sub);
+    font-size: 14px;
+}
+
+/* Button Styling - Modern Pill/Rounded */
+.cyber-button {
+    background: var(--primary-color) !important;
+    border-color: var(--primary-color) !important;
+    color: white !important;
+    border-radius: 8px !important;
+    padding: 10px 20px !important;
+    font-weight: 600 !important;
+    box-shadow: 0 4px 14px 0 rgba(0, 118, 255, 0.39);
+    transition: all 0.2s ease;
+}
+
+.cyber-button:hover {
+    background: var(--primary-hover) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(0, 118, 255, 0.23);
+}
+
+/* Select styling */
+.cyber-select {
+    --el-input-border-radius: 8px;
+}
+
+/* Table Styling - Clean & Spacious */
+.el-table {
+    --el-table-header-bg-color: var(--bg-card) !important;
+    --el-table-border-color: var(--border-color) !important;
+    --el-table-tr-bg-color: var(--bg-card) !important;
+    --el-table-row-hover-bg-color: rgba(0, 0, 0, 0.02) !important;
+    --el-table-cell-padding-left: 8px !important;
+    /* Reduce horizontal spacing */
+    --el-table-cell-padding-right: 8px !important;
+    background-color: var(--bg-card) !important;
+}
+
+/* Header Font Styling */
+.el-table th.el-table__cell {
+    background: var(--bg-card) !important;
+    color: var(--text-sub);
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border-color) !important;
+    padding: 12px 0 !important;
+    /* Reduced from 16px to 12px */
+}
+
+/* Force EVERY cell to have a background to prevent transparency issues */
+.el-table .el-table__cell {
+    background-color: var(--bg-card) !important;
+    padding: 8px 0 !important;
+    /* Reduced from 16px to 8px for tighter spacing */
+}
+
+/* Center align all table cell content */
+.el-table .el-table__cell .cell {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    /* Center horizontally */
+    gap: 8px;
+}
+
+/* Left-align the first column (Name) for better readability */
+.el-table .el-table__cell:first-child .cell {
+    justify-content: flex-start;
+    padding-left: 16px;
+}
+
+/* Dark Mode Overrides for Table Variables */
+.dark .el-table {
+    --el-table-tr-bg-color: var(--bg-card) !important;
+    --el-table-header-bg-color: var(--bg-card) !important;
+    --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Tags */
+.cyber-tag-static {
+    border-radius: 6px;
+    font-weight: 600;
+    border: none;
+}
+
+/* Dark Mode Specific Overrides for "Cool" factor */
+.dark .cyber-card {
+    box-shadow: 0 0 0 1px #333;
+}
+
+.dark .el-table {
+    --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Fix for overlapping text in fixed columns - Deep Layering */
+.el-table .el-table__fixed,
+.el-table .el-table__fixed-right,
+.el-table__fixed-column--right,
+.el-table__fixed-column--left {
+    background-color: var(--bg-card) !important;
+    z-index: 20 !important;
+    /* Higher z-index to stay above scrollable cells */
+}
+
+/* Shadow to create a clear "Layer" effect on the fixed column */
+.el-table__fixed-right,
+.el-table-fixed-column--right.is-last-column,
+.el-table-fixed-column--right {
+    box-shadow: -10px 0 15px -10px rgba(0, 0, 0, 0.12) !important;
+    clip-path: inset(0 0 0 -15px);
+    /* Only show shadow on the left side */
+}
+
+.dark .el-table__fixed-right,
+.dark .el-table-fixed-column--right {
+    box-shadow: -12px 0 20px -10px rgba(0, 0, 0, 0.6) !important;
+    background-color: var(--bg-card) !important;
+}
+
+/* Header in fixed column MUST also be opaque */
+.el-table th.el-table__fixed-right,
+.el-table th.is-fixed-right {
+    background-color: var(--bg-card) !important;
+    z-index: 21 !important;
+}
+
+/* Prevent Header Overlap/Clutter */
+.el-table th.el-table__cell {
+    white-space: nowrap;
+}
+
+/* Ensure the table itself has enough space and shows scrollbars */
+.table-container {
+    border-radius: 8px;
+    /* Do NOT use overflow: hidden here as it might clip the table's own scrollbar */
+}
+
+/* Custom Scrollbar Styling - Premium / Minimalist */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Target Element Plus specific scrollbar if needed */
+.el-scrollbar__bar.is-horizontal,
+.el-scrollbar__bar.is-vertical {
+    background-color: transparent !important;
+    opacity: 1 !important;
+}
+
+.el-scrollbar__thumb {
+    background-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+.dark .el-scrollbar__thumb {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Header spacing fix */
+.page-header-card.cyber-card {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    margin-bottom: 0px !important;
+    /* Remove bottom margin */
+    padding-bottom: 16px !important;
+    /* Reduce padding */
+}
+
+.page-header-card.cyber-card :deep(.el-card__body) {
+    padding: 0 !important;
+}
+
+/* Force Content Card to be the main 'Surface' */
+.content-card.cyber-card {
+    background: var(--bg-card) !important;
+    box-shadow: var(--shadow-md) !important;
+    border: 1px solid var(--border-color) !important;
+    /* Ensure it takes remaining height if needed or just looks distinct */
+}
+
+/* Fix Table Button Overlap */
+.cyber-table-button {
+    padding: 4px 12px;
+    font-size: 12px;
+    height: 28px;
+    line-height: 1;
+}
+
+/* Adjust table cell padding */
+.el-table .el-table__cell {
+    padding: 12px 0;
+}
+
+/* Fix Operation Column alignment */
+.el-table .cell {
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+}

@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kafka-console.fullname" . }}-backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "kafka-console.name" . }}
+    app.kubernetes.io/component: backend
+  ports:
+    - name: http
+      port: {{ .Values.backendService.port }}
+      targetPort: http
+    - name: metrics
+      port: {{ .Values.backendService.metricsPort }}
+      targetPort: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kafka-console.fullname" . }}-frontend
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app.kubernetes.io/name: {{ include "kafka-console.name" . }}
+    app.kubernetes.io/component: frontend
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
