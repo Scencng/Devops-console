@@ -233,6 +233,9 @@ const handleUserCommand = (command) => {
 <style scoped>
 .app-layout {
   display: flex;
+  width: 100%;
+  min-width: 100%;
+  flex: 1 0 100%;
   min-height: 100vh;
   background: #eaf0f6;
 }
@@ -456,6 +459,7 @@ const handleUserCommand = (command) => {
 
 .content-wrapper {
   flex: 1;
+  width: 100%;
   min-height: 0;
   overflow: auto;
 }

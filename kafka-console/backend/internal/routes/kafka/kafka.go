@@ -36,6 +36,7 @@ func RegisterKafkaRouters(apiGroup *gin.RouterGroup) {
 		kafkaGroup.POST("/messages/produce", controller.ProduceMessage)
 		kafkaGroup.GET("/audit-logs", controller.ListAuditLogs)
 		kafkaGroup.POST("/discovery/scan", controller.ScanKafkaNetwork)
+		kafkaGroup.POST("/discovery/probe", controller.ProbeKafkaBootstrapServers)
 		kafkaGroup.POST("/discovery/import", controller.ImportDiscoveredKafka)
 	}
 }

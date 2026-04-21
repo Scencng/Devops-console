@@ -22,6 +22,21 @@ func (c *Controller) ScanKafkaNetwork(ctx *gin.Context) {
 	helper.SuccessWithData("扫描完成", "data", data)
 }
 
+func (c *Controller) ProbeKafkaBootstrapServers(ctx *gin.Context) {
+	helper := utils.NewResponseHelper(ctx)
+	var req reqKafka.DiscoveryProbeRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		helper.BadRequest("请求参数错误: " + err.Error())
+		return
+	}
+	data, err := c.service.ProbeKafkaBootstrapServers(req)
+	if err != nil {
+		helper.InternalError(err.Error())
+		return
+	}
+	helper.SuccessWithData("探测完成", "data", data)
+}
+
 func (c *Controller) ImportDiscoveredKafka(ctx *gin.Context) {
 	helper := utils.NewResponseHelper(ctx)
 	var req reqKafka.DiscoveryImportRequest

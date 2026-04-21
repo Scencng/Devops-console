@@ -33,6 +33,58 @@
       </div>
     </div>
 
+    <el-card class="content-card">
+      <template #header>
+        <div class="card-header card-header-wrap">
+          <span>高风险 Topic 摘要</span>
+          <span class="card-subtitle">优先关注内部 Topic、分区规模较大或副本保护较弱的 Topic，避免在治理时误操作</span>
+        </div>
+      </template>
+
+      <div class="workbench-grid">
+        <div class="workspace-panel">
+          <h3>重点关注 Topic</h3>
+          <p>按风险分排序，只展示当前最值得先检查的几项。</p>
+          <div class="compact-list">
+            <div v-for="item in riskyTopics" :key="item.name" class="compact-item">
+              <div>
+                <strong>{{ item.name }}</strong>
+                <span>{{ item.riskReason }}</span>
+              </div>
+              <el-tag :type="item.riskLevel === 'high' ? 'danger' : 'warning'">
+                {{ item.riskLevel === 'high' ? '高风险' : '关注' }}
+              </el-tag>
+            </div>
+          </div>
+        </div>
+
+        <div class="workspace-panel">
+          <h3>治理提示</h3>
+          <p>这几类 Topic 在调整配置、扩分区或删除前，建议先完成影响核查。</p>
+          <div class="compact-list">
+            <div class="compact-item">
+              <div>
+                <strong>内部 Topic</strong>
+                <span>内部 Topic 往往承载 Kafka 自身元数据或系统消费状态，删除和修改都要格外谨慎。</span>
+              </div>
+            </div>
+            <div class="compact-item">
+              <div>
+                <strong>大分区 Topic</strong>
+                <span>分区数量高的 Topic 影响面更大，扩分区和配置变更前应先确认生产者和消费者的并行策略。</span>
+              </div>
+            </div>
+            <div class="compact-item">
+              <div>
+                <strong>副本保护较弱</strong>
+                <span>副本数为 1 或 Min ISR 偏低时，故障冗余能力更弱，建议优先评估可靠性风险。</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
     <el-card class="content-card filter-card">
       <div class="toolbar-row">
         <div class="toolbar-left">
@@ -280,7 +332,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   createKafkaTopic,
   deleteKafkaTopic,
@@ -291,6 +343,7 @@ import {
   updateKafkaTopicConfig,
 } from '@/api/kafka.js'
 import { usePermissionStore } from '@/stores/permissionStore.js'
+import { openKafkaRiskConfirm } from '@/utils/kafkaRiskConfirm.js'
 
 const permStore = usePermissionStore()
 
@@ -351,6 +404,44 @@ const topicStats = computed(() => ({
   partitions: topics.value.reduce((sum, item) => sum + Number(item.partitions || 0), 0),
 }))
 
+const riskyTopics = computed(() =>
+  topics.value
+    .map((item) => {
+      const partitions = Number(item.partitions || 0)
+      const replicationFactor = Number(item.replicationFactor || 0)
+      const minIsr = Number(item.minInSyncReplicas || 0)
+      const reasons = []
+      let score = 0
+
+      if (item.internal) {
+        reasons.push('内部 Topic，不建议直接做删除类操作')
+        score += 3
+      }
+      if (partitions >= 20) {
+        reasons.push(`分区数较高（${partitions}）`)
+        score += 2
+      }
+      if (replicationFactor <= 1) {
+        reasons.push(`副本数偏低（${replicationFactor}）`)
+        score += 2
+      }
+      if (minIsr > 0 && minIsr <= 1) {
+        reasons.push(`Min ISR 偏低（${minIsr}）`)
+        score += 1
+      }
+
+      return {
+        ...item,
+        riskScore: score,
+        riskLevel: score >= 4 ? 'high' : 'medium',
+        riskReason: reasons.join('；') || '当前未识别到明显高风险特征',
+      }
+    })
+    .filter((item) => item.riskScore > 0)
+    .sort((a, b) => b.riskScore - a.riskScore || Number(b.partitions || 0) - Number(a.partitions || 0))
+    .slice(0, 5),
+)
+
 const resetCreateForm = () => {
   createForm.name = ''
   createForm.numPartitions = 3
@@ -402,6 +493,17 @@ const handleCreateTopic = async () => {
   const configEntries = createConfigRows.value
     .filter((item) => item.key && item.key.trim())
     .map((item) => ({ key: item.key.trim(), value: String(item.value ?? '') }))
+  await openKafkaRiskConfirm({
+    title: '创建 Topic 确认',
+    resourceName: createForm.name.trim(),
+    actionLabel: '创建 Topic',
+    dangerPoints: [
+      `将创建 ${createForm.numPartitions} 个分区、${createForm.replicationFactor} 个副本`,
+      'Topic 创建后会立即对生产者和消费者可见',
+      configEntries.length > 0 ? `还会同时写入 ${configEntries.length} 条初始配置` : '未设置额外初始配置',
+    ],
+    confirmButtonText: '确认创建',
+  })
   saving.value = true
   try {
     await createKafkaTopic({
@@ -457,6 +559,17 @@ const handleUpdateConfig = async () => {
     ElMessage.warning('请至少填写一条配置项')
     return
   }
+  await openKafkaRiskConfirm({
+    title: 'Topic 配置变更确认',
+    resourceName: activeTopic.value.name,
+    actionLabel: '修改 Topic 配置',
+    dangerPoints: [
+      `本次将提交 ${entries.length} 条配置变更`,
+      '配置会直接写入 Kafka，可能影响保留策略、压缩或副本同步行为',
+      '建议先确认生产和消费侧是否依赖这些配置',
+    ],
+    confirmButtonText: '确认保存配置',
+  })
   saving.value = true
   try {
     await updateKafkaTopicConfig(activeTopic.value.name, {
@@ -482,6 +595,17 @@ const openExpandDialog = (row) => {
 
 const handleIncreasePartitions = async () => {
   if (!selectedClusterId.value || !expandForm.topic) return
+  await openKafkaRiskConfirm({
+    title: '扩分区确认',
+    resourceName: expandForm.topic,
+    actionLabel: '增加 Topic 分区',
+    dangerPoints: [
+      `分区数会从 ${expandForm.currentPartitions} 增加到 ${expandForm.count}`,
+      'Kafka 只支持增加分区，不能回退',
+      '扩分区后可能改变生产者分区策略和消费者并行度',
+    ],
+    confirmButtonText: '确认扩分区',
+  })
   saving.value = true
   try {
     await increaseKafkaTopicPartitions(expandForm.topic, {
@@ -518,8 +642,16 @@ const handleDelete = async (row) => {
     ElMessage.warning('内部 Topic 不允许删除')
     return
   }
-  await ElMessageBox.confirm(`确认删除 Topic ${row.name} 吗？该操作不可恢复。`, '危险操作确认', {
-    type: 'warning',
+  await openKafkaRiskConfirm({
+    title: '删除 Topic 确认',
+    resourceName: row.name,
+    actionLabel: '删除 Topic',
+    dangerPoints: [
+      '该操作不可恢复，Topic 消息和配置会被直接删除',
+      '依赖这个 Topic 的生产者和消费者会立即受到影响',
+      `当前 Topic 分区数为 ${row.partitions}，删除前请确认没有活跃业务依赖`,
+    ],
+    confirmButtonText: '确认删除',
   })
   try {
     await deleteKafkaTopic(selectedClusterId.value, row.name)

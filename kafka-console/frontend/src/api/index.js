@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { showError } from "@/utils/errorPopup.js";
+import { useUiStore } from '@/stores/uiStore.js'
 
 // 创建axios实例
 const api = axios.create({
@@ -13,20 +14,17 @@ const api = axios.create({
 // 请求拦截器
 api.interceptors.request.use(
   config => {
+    const uiStore = useUiStore()
+    uiStore.incrementRequests()
     const token = localStorage.getItem('access_token')
-    console.log(`[API Request] URL: ${config.url} | Token exists: ${!!token}`)
-
-    if (token) {
-    } else {
-      console.log('No token found in localStorage for this request')
-    }
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`
     }
     return config
   },
   error => {
-    console.error('Request Interceptor Error:', error)
+    const uiStore = useUiStore()
+    uiStore.decrementRequests()
     return Promise.reject(error)
   }
 )
@@ -34,6 +32,8 @@ api.interceptors.request.use(
 // 响应拦截器
 api.interceptors.response.use(
   response => {
+    const uiStore = useUiStore()
+    uiStore.decrementRequests()
     // 对响应数据做点什么
     const { data } = response
 
@@ -50,14 +50,10 @@ api.interceptors.response.use(
     return data
   },
   error => {
+    const uiStore = useUiStore()
+    uiStore.decrementRequests()
     // 对响应错误做点什么
     if (error.response && error.response.status === 401) {
-      console.error('API 401 Log:', {
-        url: error.config?.url,
-        status: error.response.status,
-        data: error.response.data,
-        headers: error.response.headers
-      })
       if (!window.location.pathname.includes('/login')) {
         if (localStorage.getItem('access_token')) {
           localStorage.removeItem('access_token')

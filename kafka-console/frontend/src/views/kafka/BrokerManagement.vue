@@ -33,6 +33,72 @@
       </div>
     </div>
 
+    <el-card class="content-card">
+      <template #header>
+        <div class="card-header card-header-wrap">
+          <span>热点 Broker / Controller 风险提示</span>
+          <span class="card-subtitle">优先识别连接异常、Controller 数异常和分区承载过热的 Broker</span>
+        </div>
+      </template>
+
+      <div class="workbench-grid">
+        <div class="workspace-panel">
+          <h3>热点 Broker</h3>
+          <p>按 Leader 分区承载、Replica 承载和连接状态综合识别最值得优先检查的 Broker。</p>
+          <div class="compact-list">
+            <div v-for="item in hotspotBrokers" :key="item.id" class="compact-item">
+              <div>
+                <strong>Broker {{ item.id }} / {{ item.address }}</strong>
+                <span>{{ item.riskReason }}</span>
+              </div>
+              <el-tag :type="item.riskLevel === 'high' ? 'danger' : 'warning'">
+                {{ item.riskLevel === 'high' ? '高风险' : '关注' }}
+              </el-tag>
+            </div>
+          </div>
+        </div>
+
+        <div class="workspace-panel">
+          <h3>Controller 风险提示</h3>
+          <p>快速判断 Controller 角色是否稳定，以及当前集群是否出现明显异常信号。</p>
+          <div class="compact-list">
+            <div class="compact-item">
+              <div>
+                <strong>Controller 数量</strong>
+                <span>
+                  {{
+                    brokerStats.controllers === 1
+                      ? '当前只检测到 1 个 Controller，符合预期。'
+                      : brokerStats.controllers === 0
+                        ? '当前没有检测到 Controller，建议立即排查集群元数据状态。'
+                        : `当前检测到 ${brokerStats.controllers} 个 Controller，可能存在异常切换或状态不一致。`
+                  }}
+                </span>
+              </div>
+            </div>
+            <div class="compact-item">
+              <div>
+                <strong>连接状态</strong>
+                <span>
+                  {{
+                    brokerStats.connected === brokerStats.total
+                      ? '所有 Broker 当前都处于连接状态。'
+                      : `当前有 ${brokerStats.total - brokerStats.connected} 个 Broker 未连接，建议先排查网络或节点状态。`
+                  }}
+                </span>
+              </div>
+            </div>
+            <div class="compact-item">
+              <div>
+                <strong>承载偏斜</strong>
+                <span>{{ brokerRiskSummary }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
     <el-card class="content-card filter-card">
       <div class="toolbar-row">
         <div class="toolbar-left">
@@ -101,6 +167,55 @@ const brokerStats = computed(() => ({
   connected: brokers.value.filter((item) => item.connected).length,
   controllers: brokers.value.filter((item) => item.isController).length,
 }))
+
+const hotspotBrokers = computed(() => {
+  const maxLeaderPartitions = Math.max(...brokers.value.map((item) => Number(item.leaderPartitionCount || 0)), 0)
+
+  return brokers.value
+    .map((item) => {
+      const leaderPartitionCount = Number(item.leaderPartitionCount || 0)
+      const replicaPartitionCount = Number(item.replicaPartitionCount || 0)
+      const reasons = []
+      let score = 0
+
+      if (!item.connected) {
+        reasons.push('当前连接状态异常')
+        score += 3
+      }
+      if (item.isController && !item.connected) {
+        reasons.push('Controller 节点未连接')
+        score += 3
+      }
+      if (leaderPartitionCount > 0 && leaderPartitionCount === maxLeaderPartitions && leaderPartitionCount >= 10) {
+        reasons.push(`Leader 分区承载偏高（${leaderPartitionCount}）`)
+        score += 2
+      }
+      if (replicaPartitionCount >= 20) {
+        reasons.push(`Replica 承载较高（${replicaPartitionCount}）`)
+        score += 1
+      }
+
+      return {
+        ...item,
+        riskScore: score,
+        riskLevel: score >= 4 ? 'high' : 'medium',
+        riskReason: reasons.join('；') || '当前未识别到明显风险信号',
+      }
+    })
+    .filter((item) => item.riskScore > 0)
+    .sort((a, b) => b.riskScore - a.riskScore || Number(b.leaderPartitionCount || 0) - Number(a.leaderPartitionCount || 0))
+    .slice(0, 5)
+})
+
+const brokerRiskSummary = computed(() => {
+  if (brokers.value.length === 0) return '当前没有 Broker 数据。'
+  const leaderLoads = brokers.value.map((item) => Number(item.leaderPartitionCount || 0))
+  const maxLoad = Math.max(...leaderLoads, 0)
+  const minLoad = Math.min(...leaderLoads, 0)
+  return maxLoad - minLoad >= 10
+    ? `Leader 分区负载存在明显偏斜，最高 ${maxLoad}、最低 ${minLoad}，建议检查分区分布。`
+    : `Leader 分区负载差异可控，最高 ${maxLoad}、最低 ${minLoad}。`
+})
 
 const loadClusters = async () => {
   const res = await getKafkaClusterOptions()

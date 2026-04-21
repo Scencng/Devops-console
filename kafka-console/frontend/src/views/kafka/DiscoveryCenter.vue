@@ -116,6 +116,91 @@
       </el-form>
     </el-card>
 
+    <el-card class="content-card">
+      <template #header>
+        <div class="card-header card-header-wrap">
+          <div>
+            <span>按域名 / Bootstrap Servers 补充发现入口</span>
+            <span class="result-subtitle">适合已知域名、VIP 或 LB 地址；识别后会与网段扫描结果按 Cluster ID 自动合并显示</span>
+          </div>
+        </div>
+      </template>
+
+      <el-form label-position="top">
+        <el-row :gutter="16">
+          <el-col :xs="24" :lg="14">
+            <el-form-item label="域名 / Bootstrap Servers">
+              <el-input
+                v-model="domainImportForm.address"
+                placeholder="例如 kafka.example.com:9092 或 kafka-1:9092,kafka-2:9092"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="12" :lg="4">
+            <el-form-item label="超时(ms)">
+              <el-input-number v-model="domainImportForm.timeoutMs" :min="200" :max="30000" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="12" :lg="6">
+            <el-form-item label="Kafka 版本">
+              <el-input v-model="domainImportForm.auth.version" placeholder="留空自动探测，例如 3.9.0" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="16">
+          <el-col :xs="24" :md="10">
+            <el-form-item label="认证方式">
+              <el-select v-model="domainImportForm.auth.authType" style="width: 100%">
+                <el-option label="无认证" value="none" />
+                <el-option label="SASL/PLAIN" value="plain" />
+                <el-option label="SCRAM-SHA-256" value="scram_sha256" />
+                <el-option label="SCRAM-SHA-512" value="scram_sha512" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="14" class="scan-actions-col">
+            <div class="scan-actions">
+              <el-button type="primary" :loading="domainImporting" @click="probeByDomain">识别并合并</el-button>
+              <span class="scan-hint">识别成功后会进入下方统一发现结果，可继续和扫描出来的 IP 一起查看、判重和导入。</span>
+            </div>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="16">
+          <el-col :xs="24" :md="8">
+            <el-form-item label="用户名">
+              <el-input v-model="domainImportForm.auth.username" :disabled="domainImportForm.auth.authType === 'none'" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="8">
+            <el-form-item label="密码">
+              <el-input
+                v-model="domainImportForm.auth.password"
+                type="password"
+                show-password
+                :disabled="domainImportForm.auth.authType === 'none'"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="12" :md="4">
+            <el-form-item label="TLS">
+              <el-switch v-model="domainImportForm.auth.tlsEnabled" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="12" :md="4">
+            <el-form-item label="跳过校验">
+              <el-switch v-model="domainImportForm.auth.insecureSkipVerify" :disabled="!domainImportForm.auth.tlsEnabled" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-form-item v-if="domainImportForm.auth.tlsEnabled" label="CA 证书">
+          <el-input v-model="domainImportForm.auth.caCert" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+    </el-card>
+
     <el-row v-if="results.length" :gutter="16" class="summary-row">
       <el-col :xs="24" :sm="12" :lg="6" v-for="card in summaryCards" :key="card.label">
         <div class="summary-panel">
@@ -125,6 +210,114 @@
         </div>
       </el-col>
     </el-row>
+
+    <el-card v-if="clusterSummaries.length" class="content-card">
+      <template #header>
+        <div class="card-header card-header-wrap">
+          <div>
+            <span>导入风险提示与重复集群识别</span>
+            <span class="result-subtitle">在导入前先看哪些集群已存在、哪些版本待确认，以及哪些入口更值得优先复核</span>
+          </div>
+        </div>
+      </template>
+
+      <div class="workbench-grid">
+        <div class="workspace-panel">
+          <h3>导入风险提示</h3>
+          <p>根据当前扫描结果和导入状态，先确认最值得注意的风险点。</p>
+          <div class="compact-list">
+            <div class="compact-item">
+              <div>
+                <strong>待确认版本</strong>
+                <span>当前共有 {{ discoveryRiskSummary.versionPending }} 个集群版本待确认，导入前建议人工核对版本。</span>
+              </div>
+            </div>
+            <div class="compact-item">
+              <div>
+                <strong>访问入口混入</strong>
+                <span>当前共有 {{ discoveryRiskSummary.accessEntryClusters }} 个集群同时识别到访问入口和 Broker 节点，导入时建议确认最终入口。</span>
+              </div>
+            </div>
+            <div class="compact-item">
+              <div>
+                <strong>不可直接导入</strong>
+                <span>当前共有 {{ discoveryRiskSummary.nonKafkaClusters }} 个分组未识别为 Kafka 集群，建议跳过或重新确认地址。</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="workspace-panel">
+          <h3>重复集群识别</h3>
+          <p>识别已导入或 bootstrap servers 重复的集群，避免重复接入同一组节点。</p>
+          <div class="compact-list">
+            <div v-for="item in duplicateClusterHints" :key="item.key" class="compact-item">
+              <div>
+                <strong>{{ item.title }}</strong>
+                <span>{{ item.description }}</span>
+              </div>
+              <el-tag :type="item.type === 'imported' ? 'warning' : 'info'">
+                {{ item.type === 'imported' ? '已导入' : '重复入口' }}
+              </el-tag>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
+    <el-card v-if="clusterSummaries.length" class="content-card">
+      <template #header>
+        <div class="card-header card-header-wrap">
+          <div>
+            <span>导入预检查清单</span>
+            <span class="result-subtitle">导入前逐项确认版本、认证、TLS 和重复入口，减少把有风险的配置直接落到平台里</span>
+          </div>
+        </div>
+      </template>
+
+      <div class="workbench-grid">
+        <div class="workspace-panel">
+          <h3>当前批次检查状态</h3>
+          <p>默认按当前可见扫描结果和已导入状态给出预检查结论。</p>
+          <div class="compact-list">
+            <div v-for="item in importPrecheckItems" :key="item.key" class="compact-item">
+              <div>
+                <strong>{{ item.label }}</strong>
+                <span>{{ item.description }}</span>
+              </div>
+              <el-tag :type="item.passed ? 'success' : 'warning'">
+                {{ item.passed ? '已通过' : '需确认' }}
+              </el-tag>
+            </div>
+          </div>
+        </div>
+
+        <div class="workspace-panel">
+          <h3>导入建议</h3>
+          <p>建议先处理未通过项，再执行单个或批量导入。</p>
+          <div class="compact-list">
+            <div class="compact-item">
+              <div>
+                <strong>版本检查</strong>
+                <span>对自动探测失败的集群先手工确认 Kafka 版本，再导入。</span>
+              </div>
+            </div>
+            <div class="compact-item">
+              <div>
+                <strong>认证与 TLS</strong>
+                <span>如果扫描或域名导入依赖认证/TLS，建议先检查用户名密码、CA 证书和证书校验策略。</span>
+              </div>
+            </div>
+            <div class="compact-item">
+              <div>
+                <strong>重复入口</strong>
+                <span>对已导入或重复 bootstrap servers 的结果，建议直接跳过，避免平台里出现重复集群。</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-card>
 
     <el-card v-if="clusterSummaries.length" class="content-card">
       <template #header>
@@ -251,7 +444,12 @@
         </div>
       </template>
 
-      <el-table :data="filteredClusters" empty-text="当前筛选条件下没有匹配集群">
+      <div v-if="!results.length" class="surface-muted discovery-empty-state">
+        <strong>还没有发现结果</strong>
+        <p>先执行网段扫描，或者使用上方“按域名 / Bootstrap Servers 补充发现入口”。识别完成后，这里会展开显示明细表、导入风险提示和批量导入入口。</p>
+      </div>
+
+      <el-table v-else :data="filteredClusters" empty-text="当前筛选条件下没有匹配集群">
         <el-table-column type="expand" width="56">
           <template #default="{ row }">
             <div class="member-panel">
@@ -440,7 +638,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getKafkaClusters, importKafkaDiscoveryResult, scanKafkaNetwork } from '@/api/kafka.js'
+import { getKafkaClusters, importKafkaDiscoveryResult, probeKafkaBootstrapServers, scanKafkaNetwork } from '@/api/kafka.js'
 
 const LAST_DISCOVERY_VERSION_KEY = 'kafka-console:last-discovery-version'
 const DEFAULT_FALLBACK_VERSION = '3.9.0'
@@ -448,9 +646,12 @@ const DEFAULT_FALLBACK_VERSION = '3.9.0'
 const loading = ref(false)
 const importing = ref(false)
 const batchImporting = ref(false)
+const domainImporting = ref(false)
 const authMode = ref('none')
 const showAdvancedAuth = ref(false)
 const portsInput = ref('9092,9093,29092')
+const scanResults = ref([])
+const manualProbeResults = ref([])
 const results = ref([])
 const importVisible = ref(false)
 const batchImportVisible = ref(false)
@@ -495,14 +696,99 @@ const batchImportForm = reactive({
   tenant: '',
 })
 
+const domainImportForm = reactive({
+  address: '',
+  timeoutMs: 2500,
+  auth: {
+    version: '',
+    authType: 'none',
+    username: '',
+    password: '',
+    tlsEnabled: false,
+    insecureSkipVerify: false,
+    caCert: '',
+    clientCert: '',
+    clientKey: '',
+  },
+})
+
 const dedupe = (items) => Array.from(new Set((items || []).filter(Boolean)))
-const normalizeBootstrapServers = (value) =>
+const createEmptyAuthTemplate = () => ({
+  version: '',
+  authType: 'none',
+  username: '',
+  password: '',
+  tlsEnabled: false,
+  insecureSkipVerify: false,
+  caCert: '',
+  clientCert: '',
+  clientKey: '',
+})
+const cloneAuthTemplate = (auth = {}) => ({
+  ...createEmptyAuthTemplate(),
+  ...auth,
+})
+const splitBootstrapServers = (value) =>
   String(value || '')
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean)
+const normalizeEndpointKey = (value) => String(value || '').trim().toLowerCase()
+const normalizeBootstrapServers = (value) =>
+  splitBootstrapServers(value)
     .sort((a, b) => a.localeCompare(b, 'zh-CN'))
     .join(',')
+const buildEndpointKeys = (items) =>
+  dedupe(
+    (items || [])
+      .flatMap((item) => splitBootstrapServers(item))
+      .map((item) => normalizeEndpointKey(item))
+      .filter(Boolean),
+  )
+const scoreAuthTemplate = (auth = {}) =>
+  (auth.authType && auth.authType !== 'none' ? 4 : 0) +
+  (auth.tlsEnabled ? 3 : 0) +
+  (auth.username ? 2 : 0) +
+  (auth.password ? 2 : 0) +
+  (auth.caCert ? 1 : 0) +
+  (auth.clientCert ? 1 : 0) +
+  (auth.clientKey ? 1 : 0) +
+  (auth.version ? 1 : 0)
+const attachDiscoveryAuth = (items, auth) =>
+  (items || []).map((item) => ({
+    ...item,
+    authTemplate: cloneAuthTemplate(auth),
+  }))
+const mergeDiscoveryResultList = (...groups) => {
+  const merged = new Map()
+  groups.flat().forEach((item) => {
+    const key = normalizeEndpointKey(item?.address)
+    if (!key) return
+    merged.set(key, item)
+  })
+
+  return Array.from(merged.values()).sort((a, b) => {
+    if (a.looksLikeKafka !== b.looksLikeKafka) {
+      return a.looksLikeKafka ? -1 : 1
+    }
+    return String(a.address || '').localeCompare(String(b.address || ''), 'zh-CN')
+  })
+}
+const rebuildDiscoveryResults = () => {
+  results.value = mergeDiscoveryResultList(scanResults.value, manualProbeResults.value)
+}
+const resolveClusterAuthTemplate = (row) => {
+  const candidates = (row.members || [])
+    .map((member) => member.authTemplate)
+    .filter(Boolean)
+    .map((auth) => cloneAuthTemplate(auth))
+
+  if (!candidates.length) {
+    return cloneAuthTemplate(scanForm.auth)
+  }
+
+  return candidates.sort((a, b) => scoreAuthTemplate(b) - scoreAuthTemplate(a))[0]
+}
 
 const buildClusterName = (row) => {
   const firstMember = row.members?.[0]
@@ -586,10 +872,91 @@ const summaryCards = computed(() => {
   const versionPending = clusterSummaries.value.filter((item) => item.looksLikeKafka && item.versionDetectError).length
 
   return [
-    { label: '扫描节点', value: total, desc: '本次扫描返回的节点数' },
+    { label: '发现入口', value: total, desc: '当前发现结果中的入口总数' },
     { label: 'Kafka 候选', value: kafkaCandidates, desc: '能识别为 Kafka 的节点' },
     { label: '发现集群', value: clusterCount, desc: '按 Cluster ID 聚合后的集群数' },
     { label: '待确认版本', value: versionPending, desc: '导入前需要手动确认版本的集群' },
+  ]
+})
+
+const discoveryRiskSummary = computed(() => ({
+  versionPending: clusterSummaries.value.filter((item) => item.looksLikeKafka && item.versionDetectError).length,
+  accessEntryClusters: clusterSummaries.value.filter((item) => item.looksLikeKafka && item.accessEntryCount > 0).length,
+  nonKafkaClusters: clusterSummaries.value.filter((item) => !item.looksLikeKafka).length,
+}))
+
+const duplicateClusterHints = computed(() => {
+  const duplicates = []
+  const seen = new Map()
+
+  clusterSummaries.value.forEach((row) => {
+    const normalized = normalizeBootstrapServers(row.bootstrapServers)
+    if (!normalized) return
+
+    if (isImportedCluster(row)) {
+      const imported = importedClusterMeta(row)
+      duplicates.push({
+        key: `imported:${row.key}`,
+        title: row.clusterId || row.bootstrapServers,
+        description: `该入口已导入为集群${imported?.name ? `「${imported.name}」` : ''}，建议避免重复导入。`,
+        type: 'imported',
+      })
+    }
+
+    if (seen.has(normalized)) {
+      duplicates.push({
+        key: `duplicate:${row.key}`,
+        title: row.clusterId || row.bootstrapServers,
+        description: `与 ${seen.get(normalized)} 使用相同的 bootstrap servers，可能是重复识别到同一组入口。`,
+        type: 'duplicate',
+      })
+      return
+    }
+
+    seen.set(normalized, row.clusterId || row.bootstrapServers)
+  })
+
+  return duplicates.slice(0, 6)
+})
+
+const importPrecheckItems = computed(() => {
+  const visibleKafkaClusters = filteredClusters.value.filter((row) => row.looksLikeKafka)
+  const versionPendingCount = visibleKafkaClusters.filter((row) => row.versionDetectError).length
+  const duplicatedCount = visibleKafkaClusters.filter((row) => isImportedCluster(row)).length
+  const authConfigured = authMode.value !== 'none' || scanForm.auth.tlsEnabled
+  const tlsReady = !scanForm.auth.tlsEnabled || !!String(scanForm.auth.caCert || '').trim() || scanForm.auth.insecureSkipVerify
+
+  return [
+    {
+      key: 'version',
+      label: 'Kafka 版本',
+      passed: versionPendingCount === 0,
+      description:
+        versionPendingCount === 0
+          ? '当前可见 Kafka 集群都已识别到版本。'
+          : `当前还有 ${versionPendingCount} 个集群版本待确认。`,
+    },
+    {
+      key: 'auth',
+      label: '认证模板',
+      passed: authConfigured,
+      description: authConfigured ? '当前扫描 / 导入已配置认证或 TLS 模板。' : '当前使用无认证模板，请确认目标集群是否真的允许匿名接入。',
+    },
+    {
+      key: 'tls',
+      label: 'TLS 准备',
+      passed: tlsReady,
+      description: tlsReady ? 'TLS 参数看起来可用。' : '已启用 TLS，但还没有提供 CA 证书，也未开启跳过校验。请先补齐。 ',
+    },
+    {
+      key: 'duplicate',
+      label: '重复入口',
+      passed: duplicatedCount === 0,
+      description:
+        duplicatedCount === 0
+          ? '当前可见结果中未发现已导入的重复入口。'
+          : `当前有 ${duplicatedCount} 个结果与已导入集群重复。`,
+    },
   ]
 })
 
@@ -628,15 +995,32 @@ const selectedClusters = computed(() =>
   clusterSummaries.value.filter((row) => selectedClusterKeys.value.includes(row.key)),
 )
 
-const isImportedCluster = (row) => {
-  const key = normalizeBootstrapServers(row.bootstrapServers)
-  return !!importedClusterMap.value[key]
+const collectClusterEndpointKeys = (row) =>
+  buildEndpointKeys([
+    row.bootstrapServers,
+    ...(row.members || []).flatMap((member) => [member.address, ...(member.listeners || [])]),
+  ])
+
+const findImportedClusterMetaByEndpointKeys = (endpointKeys) => {
+  if (!endpointKeys.length) return null
+  return (
+    Object.values(importedClusterMap.value).find((item) =>
+      (item.endpointKeys || []).some((key) => endpointKeys.includes(key)),
+    ) || null
+  )
 }
 
-const importedClusterMeta = (row) => {
-  const key = normalizeBootstrapServers(row.bootstrapServers)
-  return importedClusterMap.value[key] || null
+const findImportedClusterMeta = (row) => {
+  const directKey = normalizeBootstrapServers(row.bootstrapServers)
+  if (directKey && importedClusterMap.value[directKey]) {
+    return importedClusterMap.value[directKey]
+  }
+  return findImportedClusterMetaByEndpointKeys(collectClusterEndpointKeys(row))
 }
+
+const isImportedCluster = (row) => !!findImportedClusterMeta(row)
+
+const importedClusterMeta = (row) => findImportedClusterMeta(row)
 
 const applyAuthTemplate = () => {
   scanForm.auth.authType = authMode.value === 'tls' ? 'none' : authMode.value
@@ -674,6 +1058,7 @@ const refreshImportedClusters = async () => {
         id: item.id,
         name: item.name,
         status: item.status,
+        endpointKeys: buildEndpointKeys([item.bootstrapServers]),
       }
     })
     importedClusterMap.value = nextMap
@@ -683,7 +1068,7 @@ const refreshImportedClusters = async () => {
 }
 
 const markImportedCluster = (row, importedInfo) => {
-  const key = normalizeBootstrapServers(row.bootstrapServers || row.address)
+  const key = normalizeBootstrapServers(row.bootstrapServers || row.address) || `imported:${importedInfo?.id || row.key}`
   if (!key) return
   importedClusterMap.value = {
     ...importedClusterMap.value,
@@ -691,6 +1076,7 @@ const markImportedCluster = (row, importedInfo) => {
       id: importedInfo?.id,
       name: importedInfo?.name || row.name,
       status: importedInfo?.status || 'unknown',
+      endpointKeys: collectClusterEndpointKeys(row),
     },
   }
 }
@@ -769,11 +1155,12 @@ const runScan = async () => {
       concurrency: Number(scanForm.concurrency),
       auth: { ...scanForm.auth },
     })
-    results.value = res?.data?.data || []
+    scanResults.value = attachDiscoveryAuth(res?.data?.data || [], scanForm.auth)
+    rebuildDiscoveryResults()
     clearSelectedClusters()
     batchImportVisible.value = false
     await refreshImportedClusters()
-    ElMessage.success(`扫描完成，共返回 ${results.value.length} 条节点结果，已自动按 Cluster ID 聚合`)
+    ElMessage.success(`扫描完成，共返回 ${scanResults.value.length} 条节点结果，已自动按 Cluster ID 聚合`)
   } catch (error) {
     ElMessage.error(error.message || '扫描失败')
   } finally {
@@ -782,6 +1169,7 @@ const runScan = async () => {
 }
 
 const openImportDialog = (row) => {
+  const authTemplate = resolveClusterAuthTemplate(row)
   importSource.value = row
   importForm.name = buildClusterName(row)
   importForm.address = row.bootstrapServers
@@ -789,10 +1177,46 @@ const openImportDialog = (row) => {
   importForm.tenant = ''
   importForm.description = `自动发现导入，ClusterID=${row.clusterId || '-'}，节点数=${row.memberCount || 1}`
   importForm.auth = {
-    ...scanForm.auth,
-    version: row.kafkaVersion || getRememberedKafkaVersion(),
+    ...authTemplate,
+    version: row.kafkaVersion || authTemplate.version || getRememberedKafkaVersion(),
   }
   importVisible.value = true
+}
+
+const resetDomainImportForm = () => {
+  domainImportForm.address = ''
+  domainImportForm.timeoutMs = 2500
+  domainImportForm.auth = createEmptyAuthTemplate()
+}
+
+const probeByDomain = async () => {
+  if (!String(domainImportForm.address || '').trim()) {
+    ElMessage.warning('请填写域名 / Bootstrap Servers')
+    return
+  }
+  domainImporting.value = true
+  try {
+    const res = await probeKafkaBootstrapServers({
+      address: domainImportForm.address.trim(),
+      timeoutMs: Number(domainImportForm.timeoutMs),
+      auth: {
+        ...domainImportForm.auth,
+      },
+    })
+    const probedResults = attachDiscoveryAuth(res?.data?.data || [], domainImportForm.auth)
+    rememberKafkaVersion(domainImportForm.auth.version)
+    manualProbeResults.value = mergeDiscoveryResultList(manualProbeResults.value, probedResults)
+    rebuildDiscoveryResults()
+    clearSelectedClusters()
+    batchImportVisible.value = false
+    await refreshImportedClusters()
+    domainImportForm.address = ''
+    ElMessage.success(`已识别 ${probedResults.length} 个入口，并合并到当前发现结果`)
+  } catch (error) {
+    ElMessage.error(error.message || '域名 / Bootstrap Servers 识别失败')
+  } finally {
+    domainImporting.value = false
+  }
 }
 
 const importResult = async () => {
@@ -840,6 +1264,7 @@ const openBatchImportDialog = () => {
     clusterId: row.clusterId,
     memberCount: row.memberCount,
     address: row.bootstrapServers,
+    auth: resolveClusterAuthTemplate(row),
     detectedVersion: row.kafkaVersion,
     versionDetectError: row.versionDetectError,
     version: row.kafkaVersion || getRememberedKafkaVersion(),
@@ -879,7 +1304,7 @@ const batchImportClusters = async () => {
         tenant: batchImportForm.tenant.trim(),
         description: item.description,
         auth: {
-          ...scanForm.auth,
+          ...item.auth,
           version: item.version,
         },
       })
@@ -905,6 +1330,7 @@ const batchImportClusters = async () => {
 
 onMounted(() => {
   refreshImportedClusters()
+  domainImportForm.auth.version = getRememberedKafkaVersion()
 })
 </script>
 
@@ -1205,6 +1631,20 @@ onMounted(() => {
   margin-top: 8px;
   color: #64748b;
   font-size: 12px;
+}
+
+.discovery-empty-state strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.discovery-empty-state p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 @media (max-width: 960px) {

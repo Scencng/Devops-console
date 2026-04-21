@@ -11,6 +11,7 @@ export const getKafkaClusterOptions = () => api.get('/kafka/clusters/options')
 export const getKafkaDashboard = (clusterId) => api.get('/kafka/dashboard', { params: { clusterId } })
 
 export const scanKafkaNetwork = (data) => api.post('/kafka/discovery/scan', data)
+export const probeKafkaBootstrapServers = (data) => api.post('/kafka/discovery/probe', data)
 export const importKafkaDiscoveryResult = (data) => api.post('/kafka/discovery/import', data)
 
 export const createKafkaTopic = (data) => api.post('/kafka/topics', data)

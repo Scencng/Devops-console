@@ -30,6 +30,14 @@
   --spacing-xxl: 48px;
 
   /* 字体系统 */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro SC', 'Helvetica Neue',
+    'PingFang SC', 'Hiragino Sans GB', 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei',
+    'Noto Sans CJK SC', Arial, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'SF Pro SC',
+    'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Segoe UI', 'Microsoft YaHei UI',
+    'Microsoft YaHei', 'Noto Sans CJK SC', Arial, sans-serif;
+  --font-mono: 'SF Mono', 'SFMono-Regular', 'JetBrains Mono', 'Cascadia Code', Consolas,
+    'Liberation Mono', monospace;
   --font-size-xs: 12px;
   --font-size-sm: 14px;
   --font-size-base: 16px;
@@ -95,8 +103,7 @@ html {
 }
 
 body {
-  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
-    'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
+  font-family: var(--font-sans);
   font-size: var(--font-size-base);
   line-height: 1.5;
   color: var(--gray-800);
@@ -109,6 +116,31 @@ body {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  font-family: var(--font-sans);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-display);
+  letter-spacing: -0.03em;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-mono);
 }
 
 #app {
@@ -325,7 +357,9 @@ body {
 .el-card__header {
   border-bottom: 1px solid var(--gray-200);
   padding: var(--spacing-md) var(--spacing-lg);
+  font-family: var(--font-display);
   font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--gray-800);
 }
 
@@ -335,7 +369,9 @@ body {
 
 .el-button {
   border-radius: var(--radius-md);
+  font-family: var(--font-sans);
   font-weight: 500;
+  letter-spacing: -0.01em;
   transition: all var(--transition-fast);
 }
 
@@ -389,7 +425,9 @@ body {
 .el-table th {
   background-color: var(--gray-50);
   color: var(--gray-700);
+  font-family: var(--font-display);
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .el-table--striped .el-table__body tr.el-table__row--striped td {
@@ -403,7 +441,15 @@ body {
 
 .el-tag {
   border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
   font-weight: 500;
+}
+
+.page-header h2,
+.summary-value,
+.metric-item strong,
+.page-metric-card strong {
+  font-family: var(--font-display);
 }
 
 .el-tag--success {

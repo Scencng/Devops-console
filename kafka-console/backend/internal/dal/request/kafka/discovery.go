@@ -20,6 +20,12 @@ type DiscoveryScanRequest struct {
 	Auth        DiscoveryAuthTemplateRequest `json:"auth"`
 }
 
+type DiscoveryProbeRequest struct {
+	Address   string                       `json:"address" binding:"required,max=2000"`
+	TimeoutMs int                          `json:"timeoutMs" binding:"omitempty,min=200,max=30000"`
+	Auth      DiscoveryAuthTemplateRequest `json:"auth"`
+}
+
 type DiscoveryImportRequest struct {
 	Name        string                       `json:"name" binding:"required,max=191"`
 	Address     string                       `json:"address" binding:"required,max=255"`

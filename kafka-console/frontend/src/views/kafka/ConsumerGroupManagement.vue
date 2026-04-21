@@ -33,6 +33,58 @@
       </div>
     </div>
 
+    <el-card class="content-card">
+      <template #header>
+        <div class="card-header card-header-wrap">
+          <span>异常消费组优先级排序</span>
+          <span class="card-subtitle">把状态异常和高 Lag 的消费组前置，帮助你决定先处理哪一批问题</span>
+        </div>
+      </template>
+
+      <div class="workbench-grid">
+        <div class="workspace-panel">
+          <h3>优先处理列表</h3>
+          <p>按状态异常、Lag 和分区规模综合排序，默认取最需要关注的 5 个消费组。</p>
+          <div class="compact-list">
+            <div v-for="item in prioritizedGroups" :key="item.groupId" class="compact-item">
+              <div>
+                <strong>{{ item.groupId }}</strong>
+                <span>{{ item.priorityReason }}</span>
+              </div>
+              <el-tag :type="item.priorityLevel === 'high' ? 'danger' : 'warning'">
+                {{ item.priorityLevel === 'high' ? '优先处理' : '关注' }}
+              </el-tag>
+            </div>
+          </div>
+        </div>
+
+        <div class="workspace-panel">
+          <h3>Lag 热点提示</h3>
+          <p>快速识别积压最明显的 Topic 和状态不稳定的消费组特征。</p>
+          <div class="compact-list">
+            <div class="compact-item">
+              <div>
+                <strong>高 Lag 消费组</strong>
+                <span>当前共有 {{ lagHotspotSummary.highLagCount }} 个消费组存在积压，累计 Lag 为 {{ lagHotspotSummary.totalLag }}。</span>
+              </div>
+            </div>
+            <div class="compact-item">
+              <div>
+                <strong>状态异常</strong>
+                <span>{{ lagHotspotSummary.unstableCount }} 个消费组状态不是 Stable，建议先确认是否在频繁重平衡。</span>
+              </div>
+            </div>
+            <div class="compact-item">
+              <div>
+                <strong>热点 Topic</strong>
+                <span>{{ lagHotspotSummary.hotTopics }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
     <el-card class="content-card filter-card">
       <div class="toolbar-row">
         <div class="toolbar-left">
@@ -234,7 +286,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   getKafkaClusterOptions,
   getKafkaConsumerGroupDetail,
@@ -242,6 +294,7 @@ import {
   resetKafkaGroupOffset,
 } from '@/api/kafka.js'
 import { usePermissionStore } from '@/stores/permissionStore.js'
+import { openKafkaRiskConfirm } from '@/utils/kafkaRiskConfirm.js'
 
 const permStore = usePermissionStore()
 
@@ -287,6 +340,65 @@ const groupStats = computed(() => ({
   stable: groups.value.filter((item) => item.state === 'Stable').length,
   totalLag: groups.value.reduce((sum, item) => sum + Number(item.committedLag || 0), 0),
 }))
+
+const prioritizedGroups = computed(() =>
+  groups.value
+    .map((item) => {
+      const lag = Number(item.committedLag || 0)
+      const partitionCount = Number(item.partitionCount || 0)
+      const reasons = []
+      let score = 0
+
+      if (item.state !== 'Stable') {
+        reasons.push(`状态异常（${item.state || 'Unknown'}）`)
+        score += 3
+      }
+      if (lag > 0) {
+        reasons.push(`存在 Lag（${lag}）`)
+        score += lag >= 1000 ? 3 : 2
+      }
+      if (partitionCount >= 20) {
+        reasons.push(`分区数较高（${partitionCount}）`)
+        score += 1
+      }
+
+      return {
+        ...item,
+        priorityScore: score,
+        priorityLevel: score >= 5 ? 'high' : 'medium',
+        priorityReason: reasons.join('；') || '当前没有明显异常信号',
+      }
+    })
+    .filter((item) => item.priorityScore > 0)
+    .sort((a, b) => b.priorityScore - a.priorityScore || Number(b.committedLag || 0) - Number(a.committedLag || 0))
+    .slice(0, 5),
+)
+
+const lagHotspotSummary = computed(() => {
+  const highLagGroups = groups.value.filter((item) => Number(item.committedLag || 0) > 0)
+  const unstableGroups = groups.value.filter((item) => item.state !== 'Stable')
+  const topicCounter = new Map()
+
+  highLagGroups.forEach((group) => {
+    ;(group.topics || []).forEach((topic) => {
+      if (!topic) return
+      topicCounter.set(topic, (topicCounter.get(topic) || 0) + 1)
+    })
+  })
+
+  const hotTopics = Array.from(topicCounter.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([topic, count]) => `${topic}（${count} 个消费组）`)
+    .join('，')
+
+  return {
+    highLagCount: highLagGroups.length,
+    unstableCount: unstableGroups.length,
+    totalLag: groupStats.value.totalLag,
+    hotTopics: hotTopics || '当前没有明显的 Lag 热点 Topic',
+  }
+})
 
 const topicOptions = computed(() => activeGroup.value?.topics || detailData.value?.topics || [])
 
@@ -368,11 +480,19 @@ const handleResetOffset = async () => {
     ElMessage.warning('请选择时间')
     return
   }
-  await ElMessageBox.confirm(
-    `确认重置消费组 ${resetForm.groupId} 在 Topic ${resetForm.topic} 上的 Offset 吗？`,
-    '危险操作确认',
-    { type: 'warning' },
-  )
+  await openKafkaRiskConfirm({
+    title: 'Offset 重置确认',
+    resourceName: `${resetForm.groupId} / ${resetForm.topic}`,
+    actionLabel: '重置消费组 Offset',
+    dangerPoints: [
+      resetForm.allPartitions
+        ? '会修改该 Topic 下全部分区的消费位置'
+        : `会修改分区 ${resetForm.partition} 的消费位置`,
+      `重置方式为 ${resetForm.resetType}`,
+      '如果消费者仍在运行，可能立刻触发重复消费或跳过消息',
+    ],
+    confirmButtonText: '确认重置',
+  })
   saving.value = true
   try {
     const payload = {

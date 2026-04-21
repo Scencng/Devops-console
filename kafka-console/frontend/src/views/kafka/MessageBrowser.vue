@@ -43,6 +43,88 @@
       </div>
     </div>
 
+    <el-card class="content-card">
+      <template #header>
+        <div class="card-header card-header-wrap">
+          <span>高风险发送提示摘要</span>
+          <span class="card-subtitle">在发送测试消息前，先快速判断当前目标是否存在较高业务影响风险</span>
+        </div>
+      </template>
+
+      <div class="workbench-grid">
+        <div class="workspace-panel">
+          <h3>发送风险信号</h3>
+          <p>基于当前目标集群、Topic 和分区选择，给出最值得先确认的风险提示。</p>
+          <div class="compact-list">
+            <div v-for="item in sendRiskHints" :key="item.title" class="compact-item">
+              <div>
+                <strong>{{ item.title }}</strong>
+                <span>{{ item.description }}</span>
+              </div>
+              <el-tag :type="item.level === 'high' ? 'danger' : 'warning'">
+                {{ item.level === 'high' ? '高风险' : '关注' }}
+              </el-tag>
+            </div>
+          </div>
+        </div>
+
+        <div class="workspace-panel">
+          <h3>最近发送记录</h3>
+          <p>直接在当前页查看最近消息发送动作和执行结果，无需切换到审计页。</p>
+          <div class="compact-list">
+            <div v-for="item in recentProduceLogs" :key="item.id" class="compact-item">
+              <div>
+                <strong>{{ item.resourceName || '-' }}</strong>
+                <span>{{ formatTime(item.createdAt) }} / {{ item.operatorUsername || '未知操作人' }} / {{ item.result === 'success' ? '发送成功' : '发送失败' }}</span>
+              </div>
+              <el-tag :type="item.result === 'success' ? 'success' : 'danger'">
+                {{ item.result === 'success' ? '成功' : '失败' }}
+              </el-tag>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
+    <el-card class="content-card">
+      <template #header>
+        <div class="card-header card-header-wrap">
+          <span>消息发送模板 / 最近参数复用</span>
+          <span class="card-subtitle">把常用发送参数沉淀成模板，也可以直接复用最近一次发送过的参数</span>
+        </div>
+      </template>
+
+      <div class="workbench-grid">
+        <div class="workspace-panel">
+          <h3>快捷模板</h3>
+          <p>预置几组最常见的测试消息模板，点击后会直接填入发送表单。</p>
+          <div class="compact-list">
+            <div v-for="item in produceTemplates" :key="item.key" class="compact-item">
+              <div>
+                <strong>{{ item.label }}</strong>
+                <span>{{ item.description }}</span>
+              </div>
+              <el-button link type="primary" @click="applyProduceTemplate(item)">套用模板</el-button>
+            </div>
+          </div>
+        </div>
+
+        <div class="workspace-panel">
+          <h3>最近发送参数</h3>
+          <p>从最近发送记录里提取参数，便于再次复用同类测试消息。</p>
+          <div class="compact-list">
+            <div v-for="item in reusableProduceLogs" :key="item.id" class="compact-item">
+              <div>
+                <strong>{{ item.topic || item.resourceName || '-' }}</strong>
+                <span>{{ formatTime(item.createdAt) }} / {{ item.summary }}</span>
+              </div>
+              <el-button link type="primary" @click="reuseProduceLog(item)">复用参数</el-button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
     <el-card class="content-card filter-card">
       <div class="toolbar-row">
         <div class="toolbar-left">
@@ -228,12 +310,14 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
+  getKafkaAuditLogs,
   getKafkaClusterOptions,
   getKafkaMessages,
   getKafkaTopics,
   produceKafkaMessage,
 } from '@/api/kafka.js'
 import { usePermissionStore } from '@/stores/permissionStore.js'
+import { openKafkaRiskConfirm } from '@/utils/kafkaRiskConfirm.js'
 
 const permStore = usePermissionStore()
 
@@ -247,6 +331,45 @@ const produceDialogVisible = ref(false)
 const detailDrawerVisible = ref(false)
 const activeMessage = ref(null)
 const producePartitionMode = ref('auto')
+const recentProduceLogs = ref([])
+const produceTemplates = [
+  {
+    key: 'json-event',
+    label: 'JSON 事件模板',
+    description: '适合验证消费链路、日志和 JSON 解析展示。',
+    payload: {
+      keyEncoding: 'plain',
+      valueEncoding: 'plain',
+      key: 'demo.event',
+      value: JSON.stringify({ event: 'demo.created', source: 'kafka-console', ts: Date.now() }, null, 2),
+      headers: [{ key: 'content-type', value: 'application/json', valueEncoding: 'plain' }],
+    },
+  },
+  {
+    key: 'plain-text',
+    label: '纯文本模板',
+    description: '适合快速验证 Topic 连通性和消费者是否能收到消息。',
+    payload: {
+      keyEncoding: 'plain',
+      valueEncoding: 'plain',
+      key: '',
+      value: 'hello from kafka-console',
+      headers: [],
+    },
+  },
+  {
+    key: 'base64',
+    label: 'Base64 模板',
+    description: '适合验证二进制内容或 Base64 编码场景。',
+    payload: {
+      keyEncoding: 'plain',
+      valueEncoding: 'base64',
+      key: 'binary-demo',
+      value: 'aGVsbG8ga2Fma2E=',
+      headers: [],
+    },
+  },
+]
 
 const form = reactive({
   clusterId: null,
@@ -279,6 +402,76 @@ const partitionOptions = computed(() => {
   const count = item?.partitions || 0
   return Array.from({ length: count }, (_, index) => index)
 })
+
+const sendRiskHints = computed(() => {
+  const hints = []
+  const topicMeta = topics.value.find((topic) => topic.name === produceForm.topic || topic.name === form.topic)
+  const selectedTopicName = produceForm.topic || form.topic
+
+  if (currentClusterName.value && /prod|生产/i.test(currentClusterName.value)) {
+    hints.push({
+      title: '生产环境发送',
+      description: '当前集群名称看起来像生产环境，请确认这条消息不会触发真实业务副作用。',
+      level: 'high',
+    })
+  }
+
+  if (topicMeta?.internal) {
+    hints.push({
+      title: '内部 Topic',
+      description: `${selectedTopicName} 是内部 Topic，不建议在没有明确目的时直接发送消息。`,
+      level: 'high',
+    })
+  }
+
+  if (producePartitionMode.value === 'manual') {
+    hints.push({
+      title: '指定分区发送',
+      description: `消息会被发送到分区 ${produceForm.partition}，建议确认该分区是否承载热点流量。`,
+      level: 'warning',
+    })
+  }
+
+  if ((produceForm.value || '').length > 2000) {
+    hints.push({
+      title: '消息体较大',
+      description: `当前消息体长度约 ${(produceForm.value || '').length} 个字符，建议确认不会引入额外的传输和消费开销。`,
+      level: 'warning',
+    })
+  }
+
+  if (hints.length === 0) {
+    hints.push({
+      title: '未识别明显高风险信号',
+      description: '当前发送目标没有识别到明显高风险特征，但仍建议确认 Topic 用途和业务影响。',
+      level: 'warning',
+    })
+  }
+
+  return hints
+})
+
+const reusableProduceLogs = computed(() =>
+  recentProduceLogs.value
+    .map((item) => {
+      let parsedPayload = null
+      try {
+        parsedPayload = item.requestPayload ? JSON.parse(item.requestPayload) : null
+      } catch {
+        parsedPayload = null
+      }
+      return {
+        ...item,
+        parsedPayload,
+        topic: parsedPayload?.topic || '',
+        summary: parsedPayload
+          ? `Key 编码 ${parsedPayload.keyEncoding || 'plain'} / Value 编码 ${parsedPayload.valueEncoding || 'plain'} / Header ${parsedPayload.headerCount || 0} 个`
+          : '未能解析请求参数',
+      }
+    })
+    .filter((item) => item.parsedPayload)
+    .slice(0, 5),
+)
 
 const producePartitionOptions = computed(() => {
   const item = produceTopics.value.find((topic) => topic.name === produceForm.topic)
@@ -317,10 +510,29 @@ const loadProduceTopics = async () => {
   }
 }
 
+const loadRecentProduceLogs = async () => {
+  if (!form.clusterId) {
+    recentProduceLogs.value = []
+    return
+  }
+  try {
+    const res = await getKafkaAuditLogs({
+      clusterId: form.clusterId,
+      action: 'message:produce',
+      page: 1,
+      pageSize: 6,
+    })
+    recentProduceLogs.value = res?.data?.data?.list || []
+  } catch {
+    recentProduceLogs.value = []
+  }
+}
+
 const handleClusterChange = async () => {
   form.topic = ''
   form.partition = 0
   await loadTopics()
+  await loadRecentProduceLogs()
 }
 
 const handleTopicChange = () => {
@@ -364,6 +576,61 @@ const openProduceDialog = async () => {
   produceDialogVisible.value = true
 }
 
+const hydrateProduceForm = async ({
+  clusterId = form.clusterId,
+  topic = form.topic,
+  partition = form.partition,
+  key = '',
+  keyEncoding = 'plain',
+  value = '',
+  valueEncoding = 'plain',
+  headers = [],
+  partitionMode = 'auto',
+}) => {
+  produceForm.clusterId = clusterId
+  produceForm.topic = topic
+  produceForm.partition = partition
+  produceForm.key = key
+  produceForm.keyEncoding = keyEncoding
+  produceForm.value = value
+  produceForm.valueEncoding = valueEncoding
+  producePartitionMode.value = partitionMode
+  produceHeaders.value = headers.length > 0 ? headers : [{ key: '', value: '', valueEncoding: 'plain' }]
+  await loadProduceTopics()
+  if (!produceTopics.value.find((item) => item.name === produceForm.topic) && produceTopics.value.length > 0) {
+    produceForm.topic = produceTopics.value[0].name
+  }
+}
+
+const applyProduceTemplate = async (template) => {
+  await hydrateProduceForm({
+    ...template.payload,
+    headers: template.payload.headers,
+  })
+  produceDialogVisible.value = true
+}
+
+const reuseProduceLog = async (log) => {
+  const payload = log.parsedPayload
+  if (!payload) {
+    ElMessage.warning('该记录缺少可复用的发送参数')
+    return
+  }
+  await hydrateProduceForm({
+    clusterId: payload.clusterId || form.clusterId,
+    topic: payload.topic || form.topic,
+    partition: Number(payload.partition || 0),
+    key: payload.hasKey ? '' : '',
+    keyEncoding: payload.keyEncoding || 'plain',
+    value: '',
+    valueEncoding: payload.valueEncoding || 'plain',
+    headers: [],
+    partitionMode: Number.isInteger(payload.partition) ? 'manual' : 'auto',
+  })
+  ElMessage.info('已复用最近发送的参数，请补充消息体后发送')
+  produceDialogVisible.value = true
+}
+
 const addProduceHeader = () => {
   produceHeaders.value.push({ key: '', value: '', valueEncoding: 'plain' })
 }
@@ -404,6 +671,19 @@ const handleProduceMessage = async () => {
   if (producePartitionMode.value === 'manual') {
     payload.partition = Number(produceForm.partition)
   }
+  await openKafkaRiskConfirm({
+    title: '发送消息确认',
+    resourceName: `${currentClusterName.value} / ${produceForm.topic}`,
+    actionLabel: '发送测试消息',
+    dangerPoints: [
+      producePartitionMode.value === 'manual'
+        ? `消息会发送到指定分区 ${produceForm.partition}`
+        : '消息会由 Kafka 自动选择分区',
+      `消息体长度约 ${produceForm.value.length} 个字符`,
+      '如果当前是生产集群，请确认这条消息不会触发真实业务副作用',
+    ],
+    confirmButtonText: '确认发送',
+  })
   sending.value = true
   try {
     const res = await produceKafkaMessage(payload)
@@ -416,6 +696,9 @@ const handleProduceMessage = async () => {
       (producePartitionMode.value === 'auto' || form.partition === Number(produceForm.partition))
     ) {
       await loadMessages()
+    }
+    if (form.clusterId === produceForm.clusterId) {
+      await loadRecentProduceLogs()
     }
   } catch (error) {
     ElMessage.error(error.message || '消息发送失败')
@@ -433,6 +716,7 @@ onMounted(async () => {
   try {
     await loadClusters()
     await loadTopics()
+    await loadRecentProduceLogs()
     await loadMessages()
   } catch (error) {
     ElMessage.error(error.message || '初始化消息浏览失败')

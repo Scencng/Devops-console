@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -76,6 +77,48 @@ func (s *Service) ScanKafkaNetwork(req reqKafka.DiscoveryScanRequest) ([]respons
 			return list[i].Port < list[j].Port
 		}
 		return list[i].IP < list[j].IP
+	})
+	return list, nil
+}
+
+func (s *Service) ProbeKafkaBootstrapServers(req reqKafka.DiscoveryProbeRequest) ([]response.KafkaDiscoveryResultVO, error) {
+	candidates := normalizeBootstrapServers(req.Address)
+	if len(candidates) == 0 {
+		return nil, errors.New("未提供可用的 bootstrap servers")
+	}
+	timeout := time.Duration(req.TimeoutMs) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 2500 * time.Millisecond
+	}
+
+	list := make([]response.KafkaDiscoveryResultVO, 0, len(candidates))
+	for _, address := range candidates {
+		host, portText, err := net.SplitHostPort(address)
+		if err != nil {
+			list = append(list, response.KafkaDiscoveryResultVO{
+				IP:           address,
+				Address:      address,
+				ErrorMessage: "地址格式错误，请使用 host:port 或逗号分隔的 bootstrap servers",
+			})
+			continue
+		}
+		port, err := strconv.Atoi(portText)
+		if err != nil || port <= 0 || port > 65535 {
+			list = append(list, response.KafkaDiscoveryResultVO{
+				IP:           host,
+				Address:      address,
+				ErrorMessage: "端口格式错误，请确认地址中包含有效端口",
+			})
+			continue
+		}
+		list = append(list, s.probeKafkaEndpoint(host, port, timeout, req.Auth))
+	}
+
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].LooksLikeKafka != list[j].LooksLikeKafka {
+			return list[i].LooksLikeKafka
+		}
+		return list[i].Address < list[j].Address
 	})
 	return list, nil
 }

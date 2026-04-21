@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useUiStore } from '@/stores/uiStore.js'
 
 const routes = [
   {
@@ -35,6 +36,9 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
+  const uiStore = useUiStore()
+  uiStore.startRouteLoading()
+
   if (to.meta?.title) {
     document.title = `${to.meta.title} - Kafka Console`
   }
@@ -68,7 +72,14 @@ router.beforeEach(async (to, from, next) => {
 })
 
 router.onError((error) => {
+  const uiStore = useUiStore()
+  uiStore.finishRouteLoading()
   console.error('Router error:', error)
+})
+
+router.afterEach(() => {
+  const uiStore = useUiStore()
+  uiStore.finishRouteLoading()
 })
 
 export default router
