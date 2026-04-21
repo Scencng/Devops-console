@@ -1,83 +1,45 @@
 <template>
   <div class="page-container">
-    <el-card class="page-header-card">
-      <div class="page-header">
-        <div>
-          <div class="page-eyebrow">Audit Trail</div>
-          <h2>审计日志</h2>
-          <p>追踪 Kafka 集群、Topic 与消费组相关的高风险操作记录，帮助你还原是谁在什么时候做了什么。</p>
-        </div>
-      </div>
-    </el-card>
-
     <div class="page-metrics">
       <div class="page-metric-card is-accent">
         <span>日志条数</span>
         <strong>{{ logs.length }}</strong>
-        <p>当前筛选条件下返回的审计记录数量。</p>
       </div>
       <div class="page-metric-card is-success">
         <span>成功记录</span>
         <strong>{{ logStats.success }}</strong>
-        <p>最近筛选结果中执行成功的操作数量。</p>
       </div>
       <div class="page-metric-card is-warning">
         <span>失败记录</span>
         <strong>{{ logStats.failed }}</strong>
-        <p>建议优先查看失败动作的错误原因。</p>
-      </div>
-      <div class="page-metric-card">
-        <span>关联集群</span>
-        <strong>{{ logStats.clusterCount }}</strong>
-        <p>当前筛选结果覆盖的集群数量。</p>
       </div>
     </div>
 
     <el-card class="content-card">
       <template #header>
-        <div class="card-header card-header-wrap">
-          <span>失败原因聚类与高风险动作入口</span>
-          <span class="card-subtitle">把失败最多的原因和最敏感的动作放在当前页，方便直接切换筛选条件</span>
+        <div class="card-header">
+          <span>高风险筛选</span>
+          <span class="card-subtitle">快捷入口</span>
         </div>
       </template>
 
-      <div class="workbench-grid">
-        <div class="workspace-panel">
-          <h3>失败原因聚类</h3>
-          <p>基于当前筛选结果，对失败记录的错误原因做简单聚合，帮助快速定位最常见问题。</p>
-          <div class="compact-list">
-            <div v-for="item in errorClusters" :key="item.reason" class="compact-item">
-              <div>
-                <strong>{{ item.reason }}</strong>
-                <span>出现 {{ item.count }} 次</span>
-              </div>
-              <el-tag type="danger">失败聚类</el-tag>
-            </div>
-          </div>
-        </div>
-
-        <div class="workspace-panel">
-          <h3>高风险筛选</h3>
-          <p>常见动作快捷筛选。</p>
-          <div class="quick-filter-grid">
-            <el-button
-              v-for="item in quickRiskActions"
-              :key="item.value"
-              class="quick-filter-btn"
-              :class="{ 'is-active': filters.action === item.value }"
-              @click="applyQuickActionFilter(item.value)"
-            >
-              {{ item.label }}
-            </el-button>
-            <el-button
-              class="quick-filter-btn"
-              :class="{ 'is-active': !filters.action && !filters.result }"
-              @click="clearQuickFilters"
-            >
-              清空
-            </el-button>
-          </div>
-        </div>
+      <div class="quick-filter-grid">
+        <el-button
+          v-for="item in quickRiskActions"
+          :key="item.value"
+          class="quick-filter-btn"
+          :class="{ 'is-active': filters.action === item.value }"
+          @click="applyQuickActionFilter(item.value)"
+        >
+          {{ item.label }}
+        </el-button>
+        <el-button
+          class="quick-filter-btn"
+          :class="{ 'is-active': !filters.action && !filters.result }"
+          @click="clearQuickFilters"
+        >
+          清空
+        </el-button>
       </div>
     </el-card>
 
@@ -104,7 +66,7 @@
       <template #header>
         <div class="card-header">
           <span>审计记录</span>
-          <span class="card-subtitle">优先查看失败动作、删除类操作和 Offset 干预记录</span>
+          <span class="card-subtitle">最近审计记录</span>
         </div>
       </template>
 

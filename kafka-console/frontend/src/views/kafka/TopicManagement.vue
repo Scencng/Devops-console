@@ -1,86 +1,44 @@
 <template>
   <div class="page-container">
-    <el-card class="page-header-card">
-      <div class="page-header">
-        <div>
-          <div class="page-eyebrow">Topics</div>
-          <h2>Topic 管理</h2>
-          <p>围绕 Topic 生命周期、分区扩容和配置变更组织日常操作，减少高风险操作时的切换成本。</p>
-        </div>
-      </div>
-    </el-card>
-
     <div class="page-metrics">
-      <div class="page-metric-card is-accent">
-        <span>当前集群</span>
-        <strong>{{ selectedClusterName }}</strong>
-        <p>当前正在查看和操作的 Kafka 集群。</p>
-      </div>
       <div class="page-metric-card">
         <span>Topic 总数</span>
         <strong>{{ topicStats.total }}</strong>
-        <p>当前集群下匹配筛选条件的 Topic 数量。</p>
       </div>
       <div class="page-metric-card is-warning">
         <span>内部 Topic</span>
         <strong>{{ topicStats.internal }}</strong>
-        <p>这部分 Topic 默认不建议做删除类操作。</p>
       </div>
       <div class="page-metric-card is-success">
         <span>总分区数</span>
         <strong>{{ topicStats.partitions }}</strong>
-        <p>快速感知当前集群 Topic 的分区规模。</p>
       </div>
     </div>
 
     <el-card class="content-card">
       <template #header>
-        <div class="card-header card-header-wrap">
-          <span>高风险 Topic 摘要</span>
-          <span class="card-subtitle">优先关注内部 Topic、分区规模较大或副本保护较弱的 Topic，避免在治理时误操作</span>
+        <div class="card-header">
+          <span>风险摘要</span>
+          <span class="card-subtitle">重点 Topic</span>
         </div>
       </template>
 
-      <div class="workbench-grid">
-        <div class="workspace-panel">
-          <h3>重点关注 Topic</h3>
-          <p>按风险分排序，只展示当前最值得先检查的几项。</p>
-          <div class="compact-list">
-            <div v-for="item in riskyTopics" :key="item.name" class="compact-item">
-              <div>
-                <strong>{{ item.name }}</strong>
-                <span>{{ item.riskReason }}</span>
-              </div>
-              <el-tag :type="item.riskLevel === 'high' ? 'danger' : 'warning'">
-                {{ item.riskLevel === 'high' ? '高风险' : '关注' }}
-              </el-tag>
-            </div>
+      <div class="compact-list">
+        <div v-for="item in riskyTopics" :key="item.name" class="compact-item">
+          <div>
+            <strong>{{ item.name }}</strong>
+            <span>{{ item.riskReason }}</span>
           </div>
+          <el-tag :type="item.riskLevel === 'high' ? 'danger' : 'warning'">
+            {{ item.riskLevel === 'high' ? '高风险' : '关注' }}
+          </el-tag>
         </div>
-
-        <div class="workspace-panel">
-          <h3>治理提示</h3>
-          <p>这几类 Topic 在调整配置、扩分区或删除前，建议先完成影响核查。</p>
-          <div class="compact-list">
-            <div class="compact-item">
-              <div>
-                <strong>内部 Topic</strong>
-                <span>内部 Topic 往往承载 Kafka 自身元数据或系统消费状态，删除和修改都要格外谨慎。</span>
-              </div>
-            </div>
-            <div class="compact-item">
-              <div>
-                <strong>大分区 Topic</strong>
-                <span>分区数量高的 Topic 影响面更大，扩分区和配置变更前应先确认生产者和消费者的并行策略。</span>
-              </div>
-            </div>
-            <div class="compact-item">
-              <div>
-                <strong>副本保护较弱</strong>
-                <span>副本数为 1 或 Min ISR 偏低时，故障冗余能力更弱，建议优先评估可靠性风险。</span>
-              </div>
-            </div>
+        <div v-if="riskyTopics.length === 0" class="compact-item">
+          <div>
+            <strong>当前状态</strong>
+            <span>暂无明显高风险 Topic</span>
           </div>
+          <el-tag type="success">正常</el-tag>
         </div>
       </div>
     </el-card>
@@ -121,7 +79,7 @@
       <template #header>
         <div class="card-header">
           <span>Topic 列表</span>
-          <span class="card-subtitle">查看分区、副本、保留策略以及高风险操作入口</span>
+          <span class="card-subtitle">Topic 列表</span>
         </div>
       </template>
 

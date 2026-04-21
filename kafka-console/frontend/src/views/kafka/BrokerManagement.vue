@@ -1,100 +1,44 @@
 <template>
   <div class="page-container">
-    <el-card class="page-header-card">
-      <div class="page-header">
-        <div>
-          <div class="page-eyebrow">Brokers</div>
-          <h2>Broker 管理</h2>
-          <p>查看 Broker 节点、Controller 角色与分区承载情况，快速判断集群当前的节点分布是否健康。</p>
-        </div>
-      </div>
-    </el-card>
-
     <div class="page-metrics">
-      <div class="page-metric-card is-accent">
-        <span>当前集群</span>
-        <strong>{{ currentClusterName }}</strong>
-        <p>当前正在查看的 Kafka 集群。</p>
-      </div>
       <div class="page-metric-card">
         <span>Broker 节点</span>
         <strong>{{ brokerStats.total }}</strong>
-        <p>当前集群返回的 Broker 数量。</p>
       </div>
       <div class="page-metric-card is-success">
         <span>已连接</span>
         <strong>{{ brokerStats.connected }}</strong>
-        <p>当前能正常返回连接状态的 Broker。</p>
       </div>
       <div class="page-metric-card is-warning">
         <span>Controller</span>
         <strong>{{ brokerStats.controllers }}</strong>
-        <p>通常应只有一个 Controller 节点。</p>
       </div>
     </div>
 
     <el-card class="content-card">
       <template #header>
-        <div class="card-header card-header-wrap">
-          <span>热点 Broker / Controller 风险提示</span>
-          <span class="card-subtitle">优先识别连接异常、Controller 数异常和分区承载过热的 Broker</span>
+        <div class="card-header">
+          <span>节点摘要</span>
+          <span class="card-subtitle">热点 Broker</span>
         </div>
       </template>
 
-      <div class="workbench-grid">
-        <div class="workspace-panel">
-          <h3>热点 Broker</h3>
-          <p>按 Leader 分区承载、Replica 承载和连接状态综合识别最值得优先检查的 Broker。</p>
-          <div class="compact-list">
-            <div v-for="item in hotspotBrokers" :key="item.id" class="compact-item">
-              <div>
-                <strong>Broker {{ item.id }} / {{ item.address }}</strong>
-                <span>{{ item.riskReason }}</span>
-              </div>
-              <el-tag :type="item.riskLevel === 'high' ? 'danger' : 'warning'">
-                {{ item.riskLevel === 'high' ? '高风险' : '关注' }}
-              </el-tag>
-            </div>
+      <div class="compact-list">
+        <div v-for="item in hotspotBrokers" :key="item.id" class="compact-item">
+          <div>
+            <strong>Broker {{ item.id }}</strong>
+            <span>{{ item.riskReason }}</span>
           </div>
+          <el-tag :type="item.riskLevel === 'high' ? 'danger' : 'warning'">
+            {{ item.riskLevel === 'high' ? '高风险' : '关注' }}
+          </el-tag>
         </div>
-
-        <div class="workspace-panel">
-          <h3>Controller 风险提示</h3>
-          <p>快速判断 Controller 角色是否稳定，以及当前集群是否出现明显异常信号。</p>
-          <div class="compact-list">
-            <div class="compact-item">
-              <div>
-                <strong>Controller 数量</strong>
-                <span>
-                  {{
-                    brokerStats.controllers === 1
-                      ? '当前只检测到 1 个 Controller，符合预期。'
-                      : brokerStats.controllers === 0
-                        ? '当前没有检测到 Controller，建议立即排查集群元数据状态。'
-                        : `当前检测到 ${brokerStats.controllers} 个 Controller，可能存在异常切换或状态不一致。`
-                  }}
-                </span>
-              </div>
-            </div>
-            <div class="compact-item">
-              <div>
-                <strong>连接状态</strong>
-                <span>
-                  {{
-                    brokerStats.connected === brokerStats.total
-                      ? '所有 Broker 当前都处于连接状态。'
-                      : `当前有 ${brokerStats.total - brokerStats.connected} 个 Broker 未连接，建议先排查网络或节点状态。`
-                  }}
-                </span>
-              </div>
-            </div>
-            <div class="compact-item">
-              <div>
-                <strong>承载偏斜</strong>
-                <span>{{ brokerRiskSummary }}</span>
-              </div>
-            </div>
+        <div v-if="hotspotBrokers.length === 0" class="compact-item">
+          <div>
+            <strong>当前状态</strong>
+            <span>{{ brokerRiskSummary }}</span>
           </div>
+          <el-tag type="success">正常</el-tag>
         </div>
       </div>
     </el-card>
@@ -121,7 +65,7 @@
       <template #header>
         <div class="card-header">
           <span>Broker 列表</span>
-          <span class="card-subtitle">聚焦 Controller、连接状态与分区承载</span>
+          <span class="card-subtitle">节点列表</span>
         </div>
       </template>
 

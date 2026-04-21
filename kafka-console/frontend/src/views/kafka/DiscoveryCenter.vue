@@ -1,14 +1,5 @@
 <template>
   <div class="page-container">
-    <el-card class="page-header-card">
-      <div class="page-header">
-        <div>
-          <h2>自动发现</h2>
-          <p>按网段扫描 Kafka 候选节点，按 Cluster ID 聚合成集群后批量导入。</p>
-        </div>
-      </div>
-    </el-card>
-
     <el-card class="content-card">
       <template #header>
         <div class="card-header">
@@ -118,11 +109,9 @@
 
     <el-card class="content-card">
       <template #header>
-        <div class="card-header card-header-wrap">
-          <div>
-            <span>按域名 / Bootstrap Servers 补充发现入口</span>
-            <span class="result-subtitle">适合已知域名、VIP 或 LB 地址；识别后会与网段扫描结果按 Cluster ID 自动合并显示</span>
-          </div>
+        <div class="card-header">
+          <span>补充入口</span>
+          <span class="result-subtitle">域名 / Bootstrap</span>
         </div>
       </template>
 
@@ -162,7 +151,7 @@
           <el-col :xs="24" :md="14" class="scan-actions-col">
             <div class="scan-actions">
               <el-button type="primary" :loading="domainImporting" @click="probeByDomain">识别并合并</el-button>
-              <span class="scan-hint">识别成功后会进入下方统一发现结果，可继续和扫描出来的 IP 一起查看、判重和导入。</span>
+              <span class="scan-hint">识别后自动并入结果。</span>
             </div>
           </el-col>
         </el-row>
@@ -201,129 +190,11 @@
       </el-form>
     </el-card>
 
-    <el-row v-if="results.length" :gutter="16" class="summary-row">
-      <el-col :xs="24" :sm="12" :lg="6" v-for="card in summaryCards" :key="card.label">
-        <div class="summary-panel">
-          <span class="summary-label">{{ card.label }}</span>
-          <strong class="summary-value">{{ card.value }}</strong>
-          <span class="summary-desc">{{ card.desc }}</span>
-        </div>
-      </el-col>
-    </el-row>
-
     <el-card v-if="clusterSummaries.length" class="content-card">
       <template #header>
         <div class="card-header card-header-wrap">
           <div>
-            <span>导入风险提示与重复集群识别</span>
-            <span class="result-subtitle">在导入前先看哪些集群已存在、哪些版本待确认，以及哪些入口更值得优先复核</span>
-          </div>
-        </div>
-      </template>
-
-      <div class="workbench-grid">
-        <div class="workspace-panel">
-          <h3>导入风险提示</h3>
-          <p>根据当前扫描结果和导入状态，先确认最值得注意的风险点。</p>
-          <div class="compact-list">
-            <div class="compact-item">
-              <div>
-                <strong>待确认版本</strong>
-                <span>当前共有 {{ discoveryRiskSummary.versionPending }} 个集群版本待确认，导入前建议人工核对版本。</span>
-              </div>
-            </div>
-            <div class="compact-item">
-              <div>
-                <strong>访问入口混入</strong>
-                <span>当前共有 {{ discoveryRiskSummary.accessEntryClusters }} 个集群同时识别到访问入口和 Broker 节点，导入时建议确认最终入口。</span>
-              </div>
-            </div>
-            <div class="compact-item">
-              <div>
-                <strong>不可直接导入</strong>
-                <span>当前共有 {{ discoveryRiskSummary.nonKafkaClusters }} 个分组未识别为 Kafka 集群，建议跳过或重新确认地址。</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="workspace-panel">
-          <h3>重复集群识别</h3>
-          <p>识别已导入或 bootstrap servers 重复的集群，避免重复接入同一组节点。</p>
-          <div class="compact-list">
-            <div v-for="item in duplicateClusterHints" :key="item.key" class="compact-item">
-              <div>
-                <strong>{{ item.title }}</strong>
-                <span>{{ item.description }}</span>
-              </div>
-              <el-tag :type="item.type === 'imported' ? 'warning' : 'info'">
-                {{ item.type === 'imported' ? '已导入' : '重复入口' }}
-              </el-tag>
-            </div>
-          </div>
-        </div>
-      </div>
-    </el-card>
-
-    <el-card v-if="clusterSummaries.length" class="content-card">
-      <template #header>
-        <div class="card-header card-header-wrap">
-          <div>
-            <span>导入预检查清单</span>
-            <span class="result-subtitle">导入前逐项确认版本、认证、TLS 和重复入口，减少把有风险的配置直接落到平台里</span>
-          </div>
-        </div>
-      </template>
-
-      <div class="workbench-grid">
-        <div class="workspace-panel">
-          <h3>当前批次检查状态</h3>
-          <p>默认按当前可见扫描结果和已导入状态给出预检查结论。</p>
-          <div class="compact-list">
-            <div v-for="item in importPrecheckItems" :key="item.key" class="compact-item">
-              <div>
-                <strong>{{ item.label }}</strong>
-                <span>{{ item.description }}</span>
-              </div>
-              <el-tag :type="item.passed ? 'success' : 'warning'">
-                {{ item.passed ? '已通过' : '需确认' }}
-              </el-tag>
-            </div>
-          </div>
-        </div>
-
-        <div class="workspace-panel">
-          <h3>导入建议</h3>
-          <p>建议先处理未通过项，再执行单个或批量导入。</p>
-          <div class="compact-list">
-            <div class="compact-item">
-              <div>
-                <strong>版本检查</strong>
-                <span>对自动探测失败的集群先手工确认 Kafka 版本，再导入。</span>
-              </div>
-            </div>
-            <div class="compact-item">
-              <div>
-                <strong>认证与 TLS</strong>
-                <span>如果扫描或域名导入依赖认证/TLS，建议先检查用户名密码、CA 证书和证书校验策略。</span>
-              </div>
-            </div>
-            <div class="compact-item">
-              <div>
-                <strong>重复入口</strong>
-                <span>对已导入或重复 bootstrap servers 的结果，建议直接跳过，避免平台里出现重复集群。</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </el-card>
-
-    <el-card v-if="clusterSummaries.length" class="content-card">
-      <template #header>
-        <div class="card-header card-header-wrap">
-          <div>
-            <span>集群卡片视图</span>
+            <span>发现结果</span>
             <span class="result-subtitle">
               {{ filteredClusters.length }} / {{ clusterSummaries.length }} 个集群可见，已勾选 {{ selectedClusters.length }} 个
             </span>
@@ -337,9 +208,9 @@
             />
             <el-select v-model="filterForm.scope" class="filter-select">
               <el-option label="全部集群" value="all" />
-              <el-option label="只看 Kafka 集群" value="kafka" />
-              <el-option label="只看自动探测成功" value="detected" />
-              <el-option label="只看版本待确认" value="version-failed" />
+              <el-option label="Kafka" value="kafka" />
+              <el-option label="已识别" value="detected" />
+              <el-option label="待确认" value="version-failed" />
             </el-select>
             <el-button @click="selectVisibleClusters" :disabled="!filteredClusters.length">勾选当前结果</el-button>
             <el-button @click="clearSelectedClusters" :disabled="!selectedClusters.length">清空勾选</el-button>
@@ -434,78 +305,6 @@
           </div>
         </article>
       </div>
-    </el-card>
-
-    <el-card class="content-card" v-loading="loading">
-      <template #header>
-        <div class="card-header">
-          <span>集群明细表</span>
-          <span class="result-subtitle">保留表格视图方便展开查看节点详情</span>
-        </div>
-      </template>
-
-      <div v-if="!results.length" class="surface-muted discovery-empty-state">
-        <strong>还没有发现结果</strong>
-        <p>先执行网段扫描，或者使用上方“按域名 / Bootstrap Servers 补充发现入口”。识别完成后，这里会展开显示明细表、导入风险提示和批量导入入口。</p>
-      </div>
-
-      <el-table v-else :data="filteredClusters" empty-text="当前筛选条件下没有匹配集群">
-        <el-table-column type="expand" width="56">
-          <template #default="{ row }">
-            <div class="member-panel">
-              <div class="member-title">集群节点明细</div>
-              <el-table :data="row.members" size="small">
-                <el-table-column prop="ip" label="IP" width="150" />
-                <el-table-column prop="port" label="端口" width="100" />
-                <el-table-column label="角色" width="110">
-                  <template #default="{ row: member }">
-                    <el-tag :type="member.advertisedBroker ? 'success' : 'info'" effect="plain">
-                      {{ member.advertisedBroker ? 'Broker' : '入口' }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="brokerId" label="Broker ID" width="110" />
-                <el-table-column label="Kafka 版本" width="140">
-                  <template #default="{ row: member }">
-                    <el-tag v-if="member.kafkaVersion" type="success">{{ member.kafkaVersion }}</el-tag>
-                    <el-tag v-else-if="member.versionDetectError" type="warning">待确认</el-tag>
-                    <span v-else>-</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="listeners" min-width="260" show-overflow-tooltip>
-                  <template #default="{ row: member }">{{ (member.listeners || []).join(', ') || member.address }}</template>
-                </el-table-column>
-                <el-table-column label="状态说明" min-width="280" show-overflow-tooltip>
-                  <template #default="{ row: member }">
-                    {{ member.versionDetectError || member.errorMessage || buildMemberHint(member) }}
-                  </template>
-                </el-table-column>
-              </el-table>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="Cluster ID" min-width="240" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.clusterId || '未返回 Cluster ID' }}</template>
-        </el-table-column>
-        <el-table-column label="节点数" width="100">
-          <template #default="{ row }">{{ row.memberCount }}</template>
-        </el-table-column>
-        <el-table-column label="Kafka 版本" width="160">
-          <template #default="{ row }">
-            <el-tag v-if="row.kafkaVersion" type="success">{{ row.kafkaVersion }}</el-tag>
-            <el-tag v-else-if="row.versionDetectError" type="warning">待确认</el-tag>
-            <span v-else>-</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="Bootstrap Servers" min-width="320" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.bootstrapServers || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="状态说明" min-width="320" show-overflow-tooltip>
-          <template #default="{ row }">
-            {{ row.versionDetectError || row.errorMessage || buildClusterHint(row) }}
-          </template>
-        </el-table-column>
-      </el-table>
     </el-card>
 
     <el-dialog v-model="importVisible" title="导入为 Kafka 集群" width="680px" destroy-on-close>

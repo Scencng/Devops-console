@@ -141,7 +141,6 @@
       <header class="top-header">
         <div class="top-header-left">
           <div class="top-title">{{ route.meta?.title || 'Kafka Console' }}</div>
-          <div class="top-subtitle">{{ routeDescription }}</div>
         </div>
         <div class="top-header-right">
           <div class="status-chip">Local Workspace</div>
@@ -200,23 +199,6 @@ const isMenuActive = (item) => {
   if (isPathActive(item.path)) return true
   return hasChildren(item) ? item.children.some((child) => isMenuActive(child)) : false
 }
-
-const routeDescription = computed(() => {
-  const title = route.meta?.title || ''
-  const map = {
-    '首页': '概览今天最常用的 Kafka 工作入口',
-    'Kafka总览': '查看集群总览、核心状态和最新风险点',
-    'Kafka 总览': '查看集群总览、核心状态和最新风险点',
-    '集群管理': '维护连接信息、环境归属与连通性',
-    '自动发现': '扫描网段、识别集群入口并完成导入',
-    'Topic 管理': '管理分区、副本、配置和高风险变更',
-    'Broker 管理': '查看 Broker 承载、Controller 与节点分布',
-    '消费组管理': '观察消费组、Lag 与 Offset 干预',
-    '消息浏览': '按 Topic 与分区采样查看消息内容',
-    '审计日志': '跟踪高风险操作与最近变更记录',
-  }
-  return map[title] || '统一管理 Kafka 集群、主题、消费组和消息流'
-})
 
 const handleUserCommand = (command) => {
   if (command === 'profile') {

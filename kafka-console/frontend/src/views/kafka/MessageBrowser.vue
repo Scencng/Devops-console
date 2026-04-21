@@ -1,126 +1,37 @@
 <template>
   <div class="page-container">
-    <el-card class="page-header-card">
-      <div class="page-header">
-        <div>
-          <div class="page-eyebrow">Messages</div>
-          <h2>消息浏览</h2>
-          <p>按 Topic / Partition / Offset 抽样查看消息，并在需要时直接发送测试消息进行验证。</p>
-        </div>
-        <div class="header-actions">
-          <el-button @click="loadMessages" :loading="loading">查询消息</el-button>
-          <el-button
-            v-if="permStore.hasPerm('kafka:message:produce') || permStore.roles.includes('admin')"
-            type="primary"
-            @click="openProduceDialog"
-          >
-            发送消息
-          </el-button>
-        </div>
-      </div>
-    </el-card>
-
     <div class="page-metrics">
-      <div class="page-metric-card is-accent">
-        <span>当前集群</span>
-        <strong>{{ currentClusterName }}</strong>
-        <p>本页当前正在浏览消息的 Kafka 集群。</p>
-      </div>
       <div class="page-metric-card">
         <span>当前 Topic</span>
         <strong>{{ form.topic || '-' }}</strong>
-        <p>当前正在查询的 Topic。</p>
       </div>
       <div class="page-metric-card is-success">
         <span>当前分区</span>
         <strong>{{ form.partition }}</strong>
-        <p>消息浏览默认使用的目标分区。</p>
       </div>
       <div class="page-metric-card is-warning">
         <span>返回消息数</span>
         <strong>{{ result.count || 0 }}</strong>
-        <p>最近一次查询返回的消息条数。</p>
       </div>
     </div>
 
     <el-card class="content-card">
       <template #header>
-        <div class="card-header card-header-wrap">
-          <span>高风险发送提示摘要</span>
-          <span class="card-subtitle">在发送测试消息前，先快速判断当前目标是否存在较高业务影响风险</span>
+        <div class="card-header">
+          <span>发送风险</span>
+          <span class="card-subtitle">风险摘要</span>
         </div>
       </template>
 
-      <div class="workbench-grid">
-        <div class="workspace-panel">
-          <h3>发送风险信号</h3>
-          <p>基于当前目标集群、Topic 和分区选择，给出最值得先确认的风险提示。</p>
-          <div class="compact-list">
-            <div v-for="item in sendRiskHints" :key="item.title" class="compact-item">
-              <div>
-                <strong>{{ item.title }}</strong>
-                <span>{{ item.description }}</span>
-              </div>
-              <el-tag :type="item.level === 'high' ? 'danger' : 'warning'">
-                {{ item.level === 'high' ? '高风险' : '关注' }}
-              </el-tag>
-            </div>
+      <div class="compact-list">
+        <div v-for="item in sendRiskHints" :key="item.title" class="compact-item">
+          <div>
+            <strong>{{ item.title }}</strong>
+            <span>{{ item.description }}</span>
           </div>
-        </div>
-
-        <div class="workspace-panel">
-          <h3>最近发送记录</h3>
-          <p>直接在当前页查看最近消息发送动作和执行结果，无需切换到审计页。</p>
-          <div class="compact-list">
-            <div v-for="item in recentProduceLogs" :key="item.id" class="compact-item">
-              <div>
-                <strong>{{ item.resourceName || '-' }}</strong>
-                <span>{{ formatTime(item.createdAt) }} / {{ item.operatorUsername || '未知操作人' }} / {{ item.result === 'success' ? '发送成功' : '发送失败' }}</span>
-              </div>
-              <el-tag :type="item.result === 'success' ? 'success' : 'danger'">
-                {{ item.result === 'success' ? '成功' : '失败' }}
-              </el-tag>
-            </div>
-          </div>
-        </div>
-      </div>
-    </el-card>
-
-    <el-card class="content-card">
-      <template #header>
-        <div class="card-header card-header-wrap">
-          <span>消息发送模板 / 最近参数复用</span>
-          <span class="card-subtitle">把常用发送参数沉淀成模板，也可以直接复用最近一次发送过的参数</span>
-        </div>
-      </template>
-
-      <div class="workbench-grid">
-        <div class="workspace-panel">
-          <h3>快捷模板</h3>
-          <p>预置几组最常见的测试消息模板，点击后会直接填入发送表单。</p>
-          <div class="compact-list">
-            <div v-for="item in produceTemplates" :key="item.key" class="compact-item">
-              <div>
-                <strong>{{ item.label }}</strong>
-                <span>{{ item.description }}</span>
-              </div>
-              <el-button link type="primary" @click="applyProduceTemplate(item)">套用模板</el-button>
-            </div>
-          </div>
-        </div>
-
-        <div class="workspace-panel">
-          <h3>最近发送参数</h3>
-          <p>从最近发送记录里提取参数，便于再次复用同类测试消息。</p>
-          <div class="compact-list">
-            <div v-for="item in reusableProduceLogs" :key="item.id" class="compact-item">
-              <div>
-                <strong>{{ item.topic || item.resourceName || '-' }}</strong>
-                <span>{{ formatTime(item.createdAt) }} / {{ item.summary }}</span>
-              </div>
-              <el-button link type="primary" @click="reuseProduceLog(item)">复用参数</el-button>
-            </div>
-          </div>
+          <el-tag :type="item.level === 'high' ? 'danger' : 'warning'">
+            {{ item.level === 'high' ? '高风险' : '关注' }}
+          </el-tag>
         </div>
       </div>
     </el-card>
@@ -144,6 +55,16 @@
           </el-select>
           <el-input-number v-model="form.limit" :min="1" :max="500" style="width: 140px" />
         </div>
+        <div class="toolbar-right">
+          <el-button @click="loadMessages" :loading="loading">查询</el-button>
+          <el-button
+            v-if="permStore.hasPerm('kafka:message:produce') || permStore.roles.includes('admin')"
+            type="primary"
+            @click="openProduceDialog"
+          >
+            发消息
+          </el-button>
+        </div>
       </div>
 
       <div class="toolbar-row secondary-toolbar">
@@ -158,7 +79,7 @@
       <template #header>
         <div class="card-header">
           <span>消息列表</span>
-          <span class="card-subtitle">共 {{ result.count || 0 }} 条消息，起始 Offset {{ result.startOffset ?? '-' }}</span>
+          <span class="card-subtitle">{{ result.count || 0 }} 条</span>
         </div>
       </template>
 

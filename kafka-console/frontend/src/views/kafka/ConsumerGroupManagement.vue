@@ -1,86 +1,44 @@
 <template>
   <div class="page-container">
-    <el-card class="page-header-card">
-      <div class="page-header">
-        <div>
-          <div class="page-eyebrow">Consumer Groups</div>
-          <h2>消费组管理</h2>
-          <p>观察消费组状态、Lag 与分区明细，并在必要时执行 Offset 干预。</p>
-        </div>
-      </div>
-    </el-card>
-
     <div class="page-metrics">
-      <div class="page-metric-card is-accent">
-        <span>当前集群</span>
-        <strong>{{ currentClusterName }}</strong>
-        <p>本页当前正在观测的 Kafka 集群。</p>
-      </div>
       <div class="page-metric-card">
         <span>消费组数量</span>
         <strong>{{ groupStats.total }}</strong>
-        <p>当前筛选条件下返回的消费组数。</p>
       </div>
       <div class="page-metric-card is-success">
         <span>稳定状态</span>
         <strong>{{ groupStats.stable }}</strong>
-        <p>状态为 Stable 的消费组数量。</p>
       </div>
       <div class="page-metric-card is-warning">
         <span>总 Lag</span>
         <strong>{{ groupStats.totalLag }}</strong>
-        <p>所有消费组累计的已提交 Lag。</p>
       </div>
     </div>
 
     <el-card class="content-card">
       <template #header>
-        <div class="card-header card-header-wrap">
-          <span>异常消费组优先级排序</span>
-          <span class="card-subtitle">把状态异常和高 Lag 的消费组前置，帮助你决定先处理哪一批问题</span>
+        <div class="card-header">
+          <span>风险摘要</span>
+          <span class="card-subtitle">消费状态</span>
         </div>
       </template>
 
-      <div class="workbench-grid">
-        <div class="workspace-panel">
-          <h3>优先处理列表</h3>
-          <p>按状态异常、Lag 和分区规模综合排序，默认取最需要关注的 5 个消费组。</p>
-          <div class="compact-list">
-            <div v-for="item in prioritizedGroups" :key="item.groupId" class="compact-item">
-              <div>
-                <strong>{{ item.groupId }}</strong>
-                <span>{{ item.priorityReason }}</span>
-              </div>
-              <el-tag :type="item.priorityLevel === 'high' ? 'danger' : 'warning'">
-                {{ item.priorityLevel === 'high' ? '优先处理' : '关注' }}
-              </el-tag>
-            </div>
+      <div class="compact-list">
+        <div v-for="item in prioritizedGroups" :key="item.groupId" class="compact-item">
+          <div>
+            <strong>{{ item.groupId }}</strong>
+            <span>{{ item.priorityReason }}</span>
           </div>
+          <el-tag :type="item.priorityLevel === 'high' ? 'danger' : 'warning'">
+            {{ item.priorityLevel === 'high' ? '优先' : '关注' }}
+          </el-tag>
         </div>
-
-        <div class="workspace-panel">
-          <h3>Lag 热点提示</h3>
-          <p>快速识别积压最明显的 Topic 和状态不稳定的消费组特征。</p>
-          <div class="compact-list">
-            <div class="compact-item">
-              <div>
-                <strong>高 Lag 消费组</strong>
-                <span>当前共有 {{ lagHotspotSummary.highLagCount }} 个消费组存在积压，累计 Lag 为 {{ lagHotspotSummary.totalLag }}。</span>
-              </div>
-            </div>
-            <div class="compact-item">
-              <div>
-                <strong>状态异常</strong>
-                <span>{{ lagHotspotSummary.unstableCount }} 个消费组状态不是 Stable，建议先确认是否在频繁重平衡。</span>
-              </div>
-            </div>
-            <div class="compact-item">
-              <div>
-                <strong>热点 Topic</strong>
-                <span>{{ lagHotspotSummary.hotTopics }}</span>
-              </div>
-            </div>
+        <div v-if="prioritizedGroups.length === 0" class="compact-item">
+          <div>
+            <strong>当前状态</strong>
+            <span>{{ lagHotspotSummary.highLagCount > 0 ? `高 Lag ${lagHotspotSummary.highLagCount} 个` : '整体稳定' }}</span>
           </div>
+          <el-tag :type="lagHotspotSummary.highLagCount > 0 ? 'warning' : 'success'">{{ lagHotspotSummary.highLagCount > 0 ? '关注' : '正常' }}</el-tag>
         </div>
       </div>
     </el-card>
@@ -114,7 +72,7 @@
       <template #header>
         <div class="card-header">
           <span>消费组列表</span>
-          <span class="card-subtitle">先看状态与 Lag，再进入分区级明细处理问题</span>
+          <span class="card-subtitle">状态列表</span>
         </div>
       </template>
 
