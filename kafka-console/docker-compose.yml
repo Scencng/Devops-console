@@ -12,9 +12,9 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
     volumes:
-      - ${MYSQL_DATA_DIR:-./data/mysql}:/var/lib/mysql
-    ports:
-      - "${MYSQL_BIND:-127.0.0.1}:${MYSQL_PORT:-3306}:3306"
+      - mysql-data:/var/lib/mysql
+      - ./backend/sql/kafka_console_init.sql:/docker-entrypoint-initdb.d/001-kafka_console_init.sql:ro
+      - ./backend/sql/kafka_module.sql:/docker-entrypoint-initdb.d/002-kafka_module.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 10s
@@ -29,11 +29,9 @@ services:
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
-    command: ["sh", "-c", "redis-server --dir /data --appendonly yes --save \"\" --requirepass \"$REDIS_PASSWORD\""]
+    command: ["sh", "-c", "redis-server --dir /data --appendonly yes --save \"\" --requirepass \"$$REDIS_PASSWORD\""]
     volumes:
-      - ${REDIS_DATA_DIR:-./data/redis}:/data
-    ports:
-      - "${REDIS_BIND:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
+      - redis-data:/data
     healthcheck:
       test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli --no-auth-warning ping | grep -q PONG"]
       interval: 10s
@@ -53,10 +51,24 @@ services:
         condition: service_healthy
     environment:
       TZ: ${TZ:-Asia/Shanghai}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      DB_NAME: ${MYSQL_DATABASE:-kafka_console}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_USERNAME: ""
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DB: 0
+      JWT_SECRET: ${JWT_SECRET}
+      SERVER_LOG_LEVEL: ${SERVER_LOG_LEVEL:-info}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      SWAGGER_HOST: ${SWAGGER_HOST:-localhost:8081}
+      HEALTH_INTERVAL: ${HEALTH_INTERVAL:-30}
+      PROMETHEUS_BASE_URL: ${PROMETHEUS_BASE_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - ./backend/config:/app/config:ro
     ports:
       - "${BACKEND_BIND:-0.0.0.0}:${BACKEND_PORT:-8081}:8081"
       - "${BACKEND_METRICS_BIND:-127.0.0.1}:${BACKEND_METRICS_PORT:-9090}:9090"
@@ -78,11 +90,15 @@ services:
     environment:
       TZ: ${TZ:-Asia/Shanghai}
     ports:
-      - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-80}:8081"
+      - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-8088}:8081"
       - "${FRONTEND_METRICS_PROXY_BIND:-127.0.0.1}:${FRONTEND_METRICS_PROXY_PORT:-9200}:9200"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/health >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/ >/dev/null 2>&1 || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
       start_period: 20s
+
+volumes:
+  mysql-data:
+  redis-data:

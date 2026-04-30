@@ -1,5 +1,34 @@
 <template>
   <div class="page-container">
+    <el-card class="page-header-card" shadow="never">
+      <div class="page-header">
+        <div class="page-header-copy">
+          <div class="page-eyebrow">Kafka</div>
+          <h2>Broker 管理</h2>
+          <p>聚焦节点连通性、Controller 角色和分区承载，让热点 Broker 更快暴露出来。</p>
+        </div>
+
+        <div class="page-header-side">
+          <div class="page-header-meta">
+            <div class="page-header-kpi">
+              <span>当前集群</span>
+              <strong>{{ currentClusterName }}</strong>
+            </div>
+            <div class="page-header-kpi">
+              <span>关注节点</span>
+              <strong>{{ hotspotBrokers.length }}</strong>
+            </div>
+          </div>
+          <div class="page-header-note">
+            {{ brokerRiskSummary }}
+          </div>
+          <div class="page-header-actions">
+            <el-button @click="loadBrokers" :loading="loading">刷新</el-button>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
     <div class="page-metrics">
       <div class="page-metric-card">
         <span>Broker 节点</span>
@@ -56,7 +85,7 @@
           </el-select>
         </div>
         <div class="toolbar-right">
-          <el-button @click="loadBrokers" :loading="loading">刷新</el-button>
+          <el-button type="primary" @click="loadBrokers" :loading="loading">查询</el-button>
         </div>
       </div>
     </el-card>
@@ -87,20 +116,41 @@
         <el-table-column label="Topics" min-width="260">
           <template #default="{ row }">{{ (row.topics || []).join(', ') || '-' }}</template>
         </el-table-column>
+        <el-table-column label="操作" width="140" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              v-if="permStore.hasPerm('kafka:broker:config:update') || permStore.roles.includes('admin')"
+              link
+              type="primary"
+              :disabled="!row.connected"
+              @click="openBrokerConfigDialog(row)"
+            >
+              动态配置
+            </el-button>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
+
+    <BrokerConfigDialog ref="brokerConfigDialogRef" @success="loadBrokers" />
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
-import { getKafkaBrokers, getKafkaClusterOptions } from '@/api/kafka.js'
+import { getKafkaBrokers } from '@/api/kafka.js'
+import BrokerConfigDialog from '@/components/BrokerConfigDialog.vue'
+import { useKafkaStore } from '@/stores/kafkaStore.js'
+import { usePermissionStore } from '@/stores/permissionStore.js'
 
 const loading = ref(false)
-const clusters = ref([])
 const brokers = ref([])
-const selectedClusterId = ref(null)
+const brokerConfigDialogRef = ref()
+const kafkaStore = useKafkaStore()
+const permStore = usePermissionStore()
+const { clusterOptions: clusters, selectedClusterId } = storeToRefs(kafkaStore)
 
 const currentClusterName = computed(
   () => clusters.value.find((item) => item.id === selectedClusterId.value)?.name || '-',
@@ -113,7 +163,10 @@ const brokerStats = computed(() => ({
 }))
 
 const hotspotBrokers = computed(() => {
-  const maxLeaderPartitions = Math.max(...brokers.value.map((item) => Number(item.leaderPartitionCount || 0)), 0)
+  const maxLeaderPartitions = brokers.value.reduce(
+    (maxValue, item) => Math.max(maxValue, Number(item.leaderPartitionCount || 0)),
+    0,
+  )
 
   return brokers.value
     .map((item) => {
@@ -154,23 +207,24 @@ const hotspotBrokers = computed(() => {
 const brokerRiskSummary = computed(() => {
   if (brokers.value.length === 0) return '当前没有 Broker 数据。'
   const leaderLoads = brokers.value.map((item) => Number(item.leaderPartitionCount || 0))
-  const maxLoad = Math.max(...leaderLoads, 0)
-  const minLoad = Math.min(...leaderLoads, 0)
+  const maxLoad = leaderLoads.reduce((maxValue, value) => Math.max(maxValue, value), 0)
+  const minLoad = leaderLoads.length > 0 ? Math.min(...leaderLoads) : 0
   return maxLoad - minLoad >= 10
     ? `Leader 分区负载存在明显偏斜，最高 ${maxLoad}、最低 ${minLoad}，建议检查分区分布。`
     : `Leader 分区负载差异可控，最高 ${maxLoad}、最低 ${minLoad}。`
 })
 
-const loadClusters = async () => {
-  const res = await getKafkaClusterOptions()
-  clusters.value = res?.data?.data || []
-  if (!selectedClusterId.value && clusters.value.length > 0) {
-    selectedClusterId.value = clusters.value[0].id
+const loadClusters = async ({ force = false } = {}) => {
+  try {
+    await kafkaStore.loadClusterOptions({ force })
+  } catch (error) {
+    ElMessage.error(error.message || 'Kafka 集群列表加载失败')
+    throw error
   }
 }
 
 const loadBrokers = async () => {
-  if (!selectedClusterId.value) return
+  if (loading.value || !selectedClusterId.value) return
   loading.value = true
   try {
     const res = await getKafkaBrokers(selectedClusterId.value)
@@ -182,12 +236,19 @@ const loadBrokers = async () => {
   }
 }
 
+const openBrokerConfigDialog = (broker) => {
+  if (!broker?.id) return
+  brokerConfigDialogRef.value?.openDialog(broker.id)
+}
+
 onMounted(async () => {
   try {
     await loadClusters()
     await loadBrokers()
   } catch (error) {
-    ElMessage.error(error.message || 'Kafka 集群加载失败')
+    if (!String(error?.message || '').includes('Kafka 集群列表加载失败')) {
+      ElMessage.error(error.message || 'Kafka 集群加载失败')
+    }
   }
 })
 </script>

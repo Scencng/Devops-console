@@ -22,26 +22,46 @@ import (
 	"github.com/xdg-go/scram"
 )
 
+const (
+	defaultDiscoveryTimeout = 2500 * time.Millisecond
+	maxDiscoveryCIDRHosts   = 4096
+	maxDiscoveryEndpoints   = 32768
+)
+
 func (s *Service) ScanKafkaNetwork(req reqKafka.DiscoveryScanRequest) ([]response.KafkaDiscoveryResultVO, error) {
-	hosts, err := expandCIDR(req.CIDR)
+	hosts, err := expandCIDR(req.CIDR, maxDiscoveryCIDRHosts)
 	if err != nil {
 		return nil, err
 	}
 	timeout := time.Duration(req.TimeoutMs) * time.Millisecond
 	if timeout <= 0 {
-		timeout = 2500 * time.Millisecond
+		timeout = defaultDiscoveryTimeout
 	}
 	concurrency := req.Concurrency
 	if concurrency <= 0 {
 		concurrency = 64
+	}
+	endpointCount := len(hosts) * len(req.Ports)
+	if endpointCount == 0 {
+		return []response.KafkaDiscoveryResultVO{}, nil
+	}
+	if endpointCount > maxDiscoveryEndpoints {
+		return nil, fmt.Errorf("扫描目标过多，当前最多允许 %d 个 host:port 组合", maxDiscoveryEndpoints)
+	}
+	if concurrency > endpointCount {
+		concurrency = endpointCount
 	}
 
 	type job struct {
 		ip   string
 		port int
 	}
-	jobs := make(chan job)
-	results := make(chan response.KafkaDiscoveryResultVO, len(hosts)*len(req.Ports))
+	bufferSize := concurrency
+	if bufferSize < 1 {
+		bufferSize = 1
+	}
+	jobs := make(chan job, bufferSize)
+	results := make(chan response.KafkaDiscoveryResultVO, bufferSize)
 	var wg sync.WaitGroup
 
 	for i := 0; i < concurrency; i++ {
@@ -65,7 +85,7 @@ func (s *Service) ScanKafkaNetwork(req reqKafka.DiscoveryScanRequest) ([]respons
 		close(results)
 	}()
 
-	list := make([]response.KafkaDiscoveryResultVO, 0, len(hosts)*len(req.Ports))
+	list := make([]response.KafkaDiscoveryResultVO, 0, endpointCount)
 	for item := range results {
 		list = append(list, item)
 	}
@@ -88,7 +108,7 @@ func (s *Service) ProbeKafkaBootstrapServers(req reqKafka.DiscoveryProbeRequest)
 	}
 	timeout := time.Duration(req.TimeoutMs) * time.Millisecond
 	if timeout <= 0 {
-		timeout = 2500 * time.Millisecond
+		timeout = defaultDiscoveryTimeout
 	}
 
 	list := make([]response.KafkaDiscoveryResultVO, 0, len(candidates))
@@ -126,7 +146,7 @@ func (s *Service) ProbeKafkaBootstrapServers(req reqKafka.DiscoveryProbeRequest)
 func (s *Service) ImportDiscoveredKafka(req reqKafka.DiscoveryImportRequest) (*response.KafkaClusterVO, error) {
 	version := strings.TrimSpace(req.Auth.Version)
 	if version == "" {
-		detectedVersion, detectErr := detectKafkaVersionForBootstrapServers(req.Address, req.Auth, 2500*time.Millisecond)
+		detectedVersion, detectErr := detectKafkaVersionForBootstrapServers(req.Address, req.Auth, defaultDiscoveryTimeout)
 		if detectErr != nil {
 			return nil, fmt.Errorf("Kafka 版本自动探测失败，请手动填写版本后再导入: %w", detectErr)
 		}
@@ -284,7 +304,14 @@ func detectKafkaVersion(address string, auth reqKafka.DiscoveryAuthTemplateReque
 		"0.10.0.0",
 	}
 	var lastErr error
+	deadline := time.Now().Add(versionDetectBudget(timeout))
 	for _, version := range candidates {
+		if time.Now().After(deadline) {
+			if lastErr == nil {
+				lastErr = errors.New("Kafka 版本探测超时")
+			}
+			break
+		}
 		probeAuth := auth
 		probeAuth.Version = version
 		broker := sarama.NewBroker(address)
@@ -309,6 +336,20 @@ func detectKafkaVersion(address string, auth reqKafka.DiscoveryAuthTemplateReque
 		lastErr = errors.New("未能自动探测 Kafka 版本")
 	}
 	return "", lastErr
+}
+
+func versionDetectBudget(timeout time.Duration) time.Duration {
+	if timeout <= 0 {
+		timeout = defaultDiscoveryTimeout
+	}
+	budget := timeout * 4
+	if budget < 4*time.Second {
+		return 4 * time.Second
+	}
+	if budget > 10*time.Second {
+		return 10 * time.Second
+	}
+	return budget
 }
 
 func buildDiscoverySaramaConfig(auth reqKafka.DiscoveryAuthTemplateRequest, timeout time.Duration) (*sarama.Config, error) {
@@ -393,13 +434,29 @@ func normalizeDiscoveryAuthType(value string) string {
 	}
 }
 
-func expandCIDR(cidr string) ([]string, error) {
+func expandCIDR(cidr string, maxHosts int) ([]string, error) {
 	ip, ipNet, err := net.ParseCIDR(strings.TrimSpace(cidr))
 	if err != nil {
 		return nil, errors.New("CIDR 格式错误")
 	}
-	ip = ip.Mask(ipNet.Mask)
-	hosts := make([]string, 0)
+	ipv4 := ip.To4()
+	if ipv4 == nil {
+		return nil, errors.New("仅支持 IPv4 CIDR 扫描")
+	}
+	ones, bits := ipNet.Mask.Size()
+	if bits != net.IPv4len*8 {
+		return nil, errors.New("仅支持 IPv4 CIDR 扫描")
+	}
+	totalHosts := uint64(1) << uint(bits-ones)
+	usableHosts := totalHosts
+	if totalHosts > 2 {
+		usableHosts = totalHosts - 2
+	}
+	if maxHosts > 0 && usableHosts > uint64(maxHosts) {
+		return nil, fmt.Errorf("CIDR 范围过大，最多允许扫描 %d 个主机", maxHosts)
+	}
+	ip = ipv4.Mask(ipNet.Mask)
+	hosts := make([]string, 0, int(usableHosts))
 	for current := dupIP(ip); ipNet.Contains(current); incIP(current) {
 		hosts = append(hosts, current.String())
 	}

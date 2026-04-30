@@ -74,6 +74,23 @@ func (c *Controller) GetConsumerGroupDetail(ctx *gin.Context) {
 	helper.SuccessWithData("查询成功", "data", data)
 }
 
+func (c *Controller) DeleteConsumerGroup(ctx *gin.Context) {
+	helper := utils.NewResponseHelper(ctx)
+	var req reqKafka.ClusterQueryRequest
+	if err := ctx.ShouldBindQuery(&req); err != nil {
+		helper.BadRequest("请求参数错误: " + err.Error())
+		return
+	}
+	groupID := ctx.Param("groupId")
+	if err := c.service.DeleteConsumerGroup(req.ClusterID, groupID); err != nil {
+		c.writeAuditLog(ctx, req.ClusterID, "group:delete", "consumer_group", groupID, map[string]interface{}{"clusterId": req.ClusterID}, "failed", err.Error())
+		helper.InternalError(err.Error())
+		return
+	}
+	c.writeAuditLog(ctx, req.ClusterID, "group:delete", "consumer_group", groupID, map[string]interface{}{"clusterId": req.ClusterID}, "success", "")
+	helper.SuccessWithData("消费组删除成功", "data", nil)
+}
+
 func (c *Controller) ProduceMessage(ctx *gin.Context) {
 	helper := utils.NewResponseHelper(ctx)
 	var req reqKafka.MessageProduceRequest
@@ -115,6 +132,7 @@ func sanitizeResetOffsetPayload(req reqKafka.ResetConsumerGroupOffsetRequest) ma
 		"topic":         req.Topic,
 		"partition":     req.Partition,
 		"allPartitions": req.AllPartitions,
+		"force":         req.Force,
 		"resetType":     req.ResetType,
 		"offset":        req.Offset,
 		"timestampMs":   req.TimestampMs,

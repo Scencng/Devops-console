@@ -38,25 +38,6 @@
 .el-button {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
-  overflow: hidden;
-}
-
-.el-button::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 0;
-  height: 0;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  transition: width 0.6s ease, height 0.6s ease;
-}
-
-.el-button:hover::before {
-  width: 300px;
-  height: 300px;
 }
 
 .el-button:hover {
@@ -74,28 +55,6 @@
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 12px;
   overflow: hidden;
-  position: relative;
-}
-
-.el-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--el-color-primary), transparent);
-  transform: scaleX(0);
-  transition: transform 0.3s ease;
-}
-
-.el-card:hover::before {
-  transform: scaleX(1);
-}
-
-.el-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
 }
 
 /* 输入框增强效果 */
@@ -142,10 +101,6 @@
   background-color: rgba(64, 158, 255, 0.05) !important;
 }
 
-.el-table__row:hover td {
-  color: var(--el-color-primary);
-}
-
 /* 分页增强效果 */
 .el-pagination {
   padding: 20px 0;
@@ -179,19 +134,43 @@
 }
 
 .el-message--success {
-  background: linear-gradient(135deg, rgba(103, 194, 58, 0.9) 0%, rgba(144, 238, 144, 0.9) 100%);
+  background: linear-gradient(135deg, rgba(220, 252, 231, 0.96) 0%, rgba(187, 247, 208, 0.96) 100%);
 }
 
 .el-message--warning {
-  background: linear-gradient(135deg, rgba(230, 162, 60, 0.9) 0%, rgba(255, 235, 59, 0.9) 100%);
+  background: linear-gradient(135deg, rgba(254, 240, 138, 0.96) 0%, rgba(253, 224, 71, 0.96) 100%);
 }
 
 .el-message--error {
   background: linear-gradient(135deg, rgba(245, 108, 108, 0.9) 0%, rgba(255, 138, 128, 0.9) 100%);
 }
 
+.el-message--error .el-message__content,
+.el-message--error .el-message__icon,
+.el-message--error .el-message__closeBtn {
+  color: #111111 !important;
+}
+
 .el-message--info {
-  background: linear-gradient(135deg, rgba(64, 158, 255, 0.9) 0%, rgba(100, 181, 246, 0.9) 100%);
+  background: linear-gradient(135deg, rgba(219, 234, 254, 0.96) 0%, rgba(191, 219, 254, 0.96) 100%);
+}
+
+.el-message--success .el-message__content,
+.el-message--success .el-message__icon,
+.el-message--success .el-message__closeBtn {
+  color: #166534 !important;
+}
+
+.el-message--warning .el-message__content,
+.el-message--warning .el-message__icon,
+.el-message--warning .el-message__closeBtn {
+  color: #854d0e !important;
+}
+
+.el-message--info .el-message__content,
+.el-message--info .el-message__icon,
+.el-message--info .el-message__closeBtn {
+  color: #1d4ed8 !important;
 }
 
 /* 对话框增强效果 */
@@ -237,26 +216,64 @@
   transform: translateY(-1px);
 }
 
-/* 加载动画增强 */
-.el-loading-mask {
-  backdrop-filter: blur(2px);
-}
-
-.el-loading-spinner {
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--el-color-primary) 0%, var(--el-color-primary-light-3) 100%);
-  box-shadow: 0 4px 20px rgba(64, 158, 255, 0.3);
-}
-
 /* 响应式动画 */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  .el-card,
+  .el-button,
+  .el-input__wrapper,
+  .el-table__row,
+  .el-pagination .btn-prev,
+  .el-pagination .btn-next,
+  .el-pagination .el-pager li,
+  .el-dropdown-menu__item,
+  .el-breadcrumb__inner {
+    transition: none !important;
   }
+}
+
+/* 强制恢复 Element Plus loading 动画，避免被 reduced-motion 全局规则冻结 */
+@keyframes kafka-loading-rotate {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes kafka-loading-dash {
+  0% {
+    stroke-dasharray: 1, 200;
+    stroke-dashoffset: 0;
+  }
+
+  50% {
+    stroke-dasharray: 90, 150;
+    stroke-dashoffset: -40;
+  }
+
+  100% {
+    stroke-dasharray: 90, 150;
+    stroke-dashoffset: -120px;
+  }
+}
+
+.el-button.is-loading .el-icon,
+.el-button .el-icon.is-loading,
+.el-icon-loading {
+  animation: kafka-loading-rotate 1s linear infinite !important;
+}
+
+.el-loading-spinner,
+.el-loading-spinner * {
+  transition: none !important;
+}
+
+.el-loading-spinner .circular {
+  animation: kafka-loading-rotate 2s linear infinite !important;
+  transform-origin: center center !important;
+}
+
+.el-loading-spinner .path {
+  animation: kafka-loading-dash 1.5s ease-in-out infinite !important;
+  stroke-linecap: round !important;
 }
 
 /* 焦点可访问性增强 */

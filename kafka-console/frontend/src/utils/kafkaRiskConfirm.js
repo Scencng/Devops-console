@@ -21,10 +21,20 @@ export const openKafkaRiskConfirm = async ({
     .filter(Boolean)
     .join('\n\n')
 
-  await ElMessageBox.confirm(message, title || '高风险操作确认', {
+  await ElMessageBox.confirm(message.replace(/\n/g, '<br>'), title || '高风险操作确认', {
     type: 'warning',
     confirmButtonText,
     cancelButtonText: '取消',
     distinguishCancelAndClose: true,
+    dangerouslyUseHTMLString: true,
   })
+}
+
+export const confirmKafkaRiskAction = async (options) => {
+  try {
+    await openKafkaRiskConfirm(options)
+    return true
+  } catch {
+    return false
+  }
 }

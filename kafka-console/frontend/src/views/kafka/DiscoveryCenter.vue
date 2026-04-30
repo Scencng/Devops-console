@@ -1,5 +1,33 @@
 <template>
   <div class="page-container">
+    <el-card class="page-header-card" shadow="never">
+      <div class="page-header">
+        <div class="page-header-copy">
+          <div class="page-eyebrow">Kafka</div>
+          <h2>自动发现</h2>
+          <p>先扫描候选入口，再按 Cluster ID 聚合结果，确认版本和认证方式后再统一导入。</p>
+        </div>
+
+        <div class="page-header-side">
+          <div class="page-header-meta">
+            <div class="page-header-kpi">
+              <span>已识别集群</span>
+              <strong>{{ clusterSummaries.length }}</strong>
+            </div>
+            <div class="page-header-kpi">
+              <span>已勾选</span>
+              <strong>{{ selectedCount }}</strong>
+            </div>
+          </div>
+          <div class="page-header-note">
+            {{ importPrecheckItems.filter((item) => !item.passed).length > 0
+              ? `当前还有 ${importPrecheckItems.filter((item) => !item.passed).length} 项导入前检查未通过。`
+              : '当前导入前检查已通过，可以继续确认版本和批量导入。' }}
+          </div>
+        </div>
+      </div>
+    </el-card>
+
     <el-card class="content-card">
       <template #header>
         <div class="card-header">
@@ -37,7 +65,7 @@
         <el-row :gutter="16">
           <el-col :xs="24" :md="8" :lg="5">
             <el-form-item label="认证模板">
-              <el-select v-model="authMode" style="width: 100%" @change="applyAuthTemplate">
+              <el-select v-model="authMode" style="width: 100%">
                 <el-option label="无认证" value="none" />
                 <el-option label="SASL/PLAIN" value="plain" />
                 <el-option label="SCRAM-SHA-256" value="scram_sha256" />
@@ -52,10 +80,12 @@
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="8" :lg="14" class="scan-actions-col">
-            <div class="scan-actions">
-              <el-button type="primary" :loading="loading" @click="runScan">开始扫描</el-button>
-              <span class="scan-hint">建议先留空版本，让系统优先自动探测。</span>
-            </div>
+            <el-form-item class="scan-actions-item">
+              <div class="scan-actions">
+                <el-button type="primary" :loading="loading" @click="runScan">开始扫描</el-button>
+                <span class="scan-hint">建议先留空版本，让系统优先自动探测。</span>
+              </div>
+            </el-form-item>
           </el-col>
         </el-row>
 
@@ -149,10 +179,12 @@
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="14" class="scan-actions-col">
-            <div class="scan-actions">
-              <el-button type="primary" :loading="domainImporting" @click="probeByDomain">识别并合并</el-button>
-              <span class="scan-hint">识别后自动并入结果。</span>
-            </div>
+            <el-form-item class="scan-actions-item">
+              <div class="scan-actions">
+                <el-button type="primary" :loading="domainImporting" @click="probeByDomain">识别并合并</el-button>
+                <span class="scan-hint">识别后自动并入结果。</span>
+              </div>
+            </el-form-item>
           </el-col>
         </el-row>
 
@@ -187,7 +219,80 @@
         <el-form-item v-if="domainImportForm.auth.tlsEnabled" label="CA 证书">
           <el-input v-model="domainImportForm.auth.caCert" type="textarea" :rows="3" />
         </el-form-item>
+        <el-form-item v-if="domainImportForm.auth.tlsEnabled" label="客户端证书">
+          <el-input v-model="domainImportForm.auth.clientCert" type="textarea" :rows="3" />
+        </el-form-item>
+        <el-form-item v-if="domainImportForm.auth.tlsEnabled" label="客户端私钥">
+          <el-input v-model="domainImportForm.auth.clientKey" type="textarea" :rows="3" />
+        </el-form-item>
       </el-form>
+    </el-card>
+
+    <el-card
+      v-if="clusterSummaries.length || loading || domainImporting"
+      class="content-card"
+      v-loading="loading || domainImporting"
+      element-loading-text="正在整理发现结果..."
+    >
+      <template #header>
+        <div class="card-header">
+          <span>发现摘要</span>
+          <span class="card-subtitle">导入前信号</span>
+        </div>
+      </template>
+
+      <div class="page-metrics summary-row">
+        <div v-for="card in summaryCards" :key="card.label" class="summary-panel">
+          <span class="summary-label">{{ card.label }}</span>
+          <strong class="summary-value">{{ card.value }}</strong>
+          <span class="summary-desc">{{ card.desc }}</span>
+        </div>
+      </div>
+
+      <div class="compact-list">
+        <div class="compact-item">
+          <div>
+            <strong>版本待确认</strong>
+            <span>{{ discoveryRiskSummary.versionPending }} 个集群仍需人工确认版本。</span>
+          </div>
+          <el-tag :type="discoveryRiskSummary.versionPending > 0 ? 'warning' : 'success'">
+            {{ discoveryRiskSummary.versionPending > 0 ? '关注' : '正常' }}
+          </el-tag>
+        </div>
+        <div class="compact-item">
+          <div>
+            <strong>访问入口混入</strong>
+            <span>{{ discoveryRiskSummary.accessEntryClusters }} 个集群同时包含 Broker 节点和访问入口。</span>
+          </div>
+          <el-tag :type="discoveryRiskSummary.accessEntryClusters > 0 ? 'warning' : 'success'">
+            {{ discoveryRiskSummary.accessEntryClusters > 0 ? '确认' : '正常' }}
+          </el-tag>
+        </div>
+        <div class="compact-item">
+          <div>
+            <strong>非 Kafka 结果</strong>
+            <span>{{ discoveryRiskSummary.nonKafkaClusters }} 个结果当前未识别为 Kafka 集群。</span>
+          </div>
+          <el-tag :type="discoveryRiskSummary.nonKafkaClusters > 0 ? 'info' : 'success'">
+            {{ discoveryRiskSummary.nonKafkaClusters > 0 ? '可忽略' : '正常' }}
+          </el-tag>
+        </div>
+      </div>
+
+      <div v-if="duplicateClusterHints.length" class="duplicate-hints">
+        <div class="duplicate-hints-title">重复与已导入入口</div>
+        <div class="compact-list">
+          <div v-for="item in duplicateClusterHints" :key="item.key" class="compact-item">
+            <div>
+              <strong>{{ item.title }}</strong>
+              <span>{{ item.description }}</span>
+            </div>
+            <el-tag :type="item.type === 'imported' ? 'warning' : 'info'">
+              {{ item.type === 'imported' ? '已存在' : '重复' }}
+            </el-tag>
+          </div>
+        </div>
+      </div>
     </el-card>
 
     <el-card v-if="clusterSummaries.length" class="content-card">
@@ -196,7 +301,7 @@
           <div>
             <span>发现结果</span>
             <span class="result-subtitle">
-              {{ filteredClusters.length }} / {{ clusterSummaries.length }} 个集群可见，已勾选 {{ selectedClusters.length }} 个
+              {{ filteredClusters.length }} / {{ clusterSummaries.length }} 个集群可见，当前渲染 {{ pagedClusters.length }} 个，已勾选 {{ selectedCount }} 个
             </span>
           </div>
           <div class="result-filters">
@@ -208,11 +313,10 @@
             />
             <el-select v-model="filterForm.scope" class="filter-select">
               <el-option label="全部集群" value="all" />
-              <el-option label="Kafka" value="kafka" />
-              <el-option label="已识别" value="detected" />
+              <el-option label="Kafka 候选" value="kafka" />
+              <el-option label="版本已识别" value="detected" />
               <el-option label="待确认" value="version-failed" />
             </el-select>
-            <el-button @click="selectVisibleClusters" :disabled="!filteredClusters.length">勾选当前结果</el-button>
             <el-button @click="clearSelectedClusters" :disabled="!selectedClusters.length">清空勾选</el-button>
             <el-button type="primary" @click="openBatchImportDialog" :disabled="!selectedClusters.length">
               批量导入已选
@@ -221,101 +325,172 @@
         </div>
       </template>
 
-      <div class="cluster-card-grid">
-        <article
-          v-for="row in filteredClusters"
-          :key="row.key"
-          class="cluster-card"
-          :class="{
-            'is-selected': isSelected(row.key),
-            'is-warning': !!row.versionDetectError,
-          }"
-        >
-          <div class="cluster-card-head">
-            <el-checkbox
-              :model-value="isSelected(row.key)"
-              :disabled="!row.looksLikeKafka || isImportedCluster(row)"
-              @change="(checked) => handleClusterSelection(row.key, checked)"
-            >
-              <span class="cluster-card-title">{{ row.clusterId || '未返回 Cluster ID' }}</span>
-            </el-checkbox>
-            <div class="cluster-card-tags">
+      <el-table
+        ref="resultTableRef"
+        :data="pagedClusters"
+        row-key="key"
+        empty-text="暂无发现结果"
+        class="result-table"
+        @selection-change="handleTableSelectionChange"
+      >
+        <el-table-column
+          type="selection"
+          width="56"
+          fixed="left"
+          :selectable="isSelectableRow"
+          reserve-selection
+        />
+
+        <el-table-column label="集群 / 入口" min-width="240">
+          <template #default="{ row }">
+            <div class="result-table-cell">
+              <strong>{{ row.clusterId || '未返回 Cluster ID' }}</strong>
+              <span>{{ row.bootstrapServers || '-' }}</span>
+            </div>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="类型" width="180">
+          <template #default="{ row }">
+            <div class="result-table-tags">
               <el-tag :type="row.looksLikeKafka ? 'success' : 'info'" effect="plain">
                 {{ row.looksLikeKafka ? 'Kafka 集群' : '非 Kafka' }}
               </el-tag>
               <el-tag v-if="isImportedCluster(row)" type="info" effect="plain">
-                已导入{{ importedClusterMeta(row)?.name ? ` · ${importedClusterMeta(row).name}` : '' }}
+                已导入
               </el-tag>
-              <el-tag v-if="row.kafkaVersion" type="success" effect="plain">{{ row.kafkaVersion }}</el-tag>
-              <el-tag v-else-if="row.versionDetectError" type="warning" effect="plain">待确认版本</el-tag>
             </div>
-          </div>
+          </template>
+        </el-table-column>
 
-          <div class="cluster-card-metrics">
-            <div class="metric-item">
-              <span>Broker 节点</span>
-              <strong>{{ row.brokerCount }}</strong>
-            </div>
-            <div class="metric-item">
-              <span>Controller</span>
-              <strong>{{ row.controllerId ?? '-' }}</strong>
-            </div>
-            <div class="metric-item">
-              <span>listeners</span>
-              <strong>{{ row.listenerCount || 0 }}</strong>
-            </div>
-            <div class="metric-item">
-              <span>访问入口</span>
-              <strong>{{ row.accessEntryCount }}</strong>
-            </div>
-          </div>
+        <el-table-column label="版本" width="140">
+          <template #default="{ row }">
+            <el-tag v-if="row.kafkaVersion" type="success" effect="plain">{{ row.kafkaVersion }}</el-tag>
+            <el-tag v-else-if="row.versionDetectError" type="warning" effect="plain">待确认</el-tag>
+            <span v-else class="text-muted">-</span>
+          </template>
+        </el-table-column>
 
-          <div class="cluster-card-block">
-            <div class="block-label">Bootstrap Servers</div>
-            <div class="block-value">{{ row.bootstrapServers || '-' }}</div>
-          </div>
-
-          <div class="cluster-card-block">
-            <div class="block-label">状态说明</div>
-            <div class="block-value muted">
-              {{ row.versionDetectError || row.errorMessage || buildClusterHint(row) }}
+        <el-table-column label="规模" min-width="220">
+          <template #default="{ row }">
+            <div class="result-metrics-inline">
+              <span class="result-metric-chip">Broker {{ row.brokerCount }}</span>
+              <span class="result-metric-chip">Controller {{ row.controllerId ?? '-' }}</span>
+              <span class="result-metric-chip">监听器 {{ row.listenerCount || 0 }}</span>
+              <span class="result-metric-chip">入口 {{ row.accessEntryCount }}</span>
             </div>
-          </div>
+          </template>
+        </el-table-column>
 
-          <div class="cluster-card-members">
-            <span v-for="member in row.brokerMembers.slice(0, 4)" :key="member.address" class="member-chip">
-              {{ member.address }}
-            </span>
-            <span v-if="row.brokerMembers.length > 4" class="member-chip more">+{{ row.brokerMembers.length - 4 }}</span>
-          </div>
-
-          <div v-if="row.accessEntries.length" class="cluster-card-block">
-            <div class="block-label">访问入口</div>
-            <div class="access-entry-list">
-              <span v-for="entry in row.accessEntries" :key="entry.address" class="member-chip access">
-                {{ entry.address }}
-              </span>
+        <el-table-column label="摘要" min-width="320" show-overflow-tooltip>
+          <template #default="{ row }">
+            <div class="result-summary">
+              {{ buildRowSummary(row) }}
             </div>
-          </div>
+          </template>
+        </el-table-column>
 
-          <div class="cluster-card-actions">
-            <el-button link type="primary" :disabled="!row.looksLikeKafka || isImportedCluster(row)" @click="openImportDialog(row)">
-              {{ isImportedCluster(row) ? '已导入' : row.versionDetectError ? '手动确认版本后导入' : '按集群导入' }}
+        <el-table-column label="操作" width="220" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openResultDetail(row.key)">详情</el-button>
+            <el-button
+              link
+              type="primary"
+              :disabled="!row.looksLikeKafka || isImportedCluster(row)"
+              @click="openImportDialog(row)"
+            >
+              {{ isImportedCluster(row) ? '已导入' : row.versionDetectError ? '确认版本后导入' : '导入' }}
             </el-button>
-          </div>
-        </article>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div v-if="filteredClusters.length" class="result-pagination">
+        <el-pagination
+          background
+          layout="sizes, prev, pager, next, total"
+          :hide-on-single-page="true"
+          :total="filteredClusters.length"
+          :current-page="discoveryPage.page"
+          :page-size="discoveryPage.pageSize"
+          :page-sizes="[24, 48, 96, 192]"
+          @current-change="handleDiscoveryPageChange"
+          @size-change="handleDiscoveryPageSizeChange"
+        />
       </div>
     </el-card>
 
-    <el-dialog v-model="importVisible" title="导入为 Kafka 集群" width="680px" destroy-on-close>
+    <el-dialog
+      v-model="resultDetailVisible"
+      :title="`发现详情：${resultDetail?.clusterId || '未返回 Cluster ID'}`"
+      width="min(980px, calc(100vw - 32px))"
+      destroy-on-close
+    >
+      <div v-if="resultDetail" class="detail-dialog-content">
+        <div class="detail-summary-grid">
+          <div class="detail-summary-card">
+            <span>类型</span>
+            <strong>{{ resultDetail.looksLikeKafka ? 'Kafka' : '非 Kafka' }}</strong>
+          </div>
+          <div class="detail-summary-card">
+            <span>Broker 节点</span>
+            <strong>{{ resultDetail.brokerCount }}</strong>
+          </div>
+          <div class="detail-summary-card">
+            <span>监听器</span>
+            <strong>{{ resultDetail.listenerCount || 0 }}</strong>
+          </div>
+          <div class="detail-summary-card">
+            <span>访问入口</span>
+            <strong>{{ resultDetail.accessEntryCount }}</strong>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="section-title">Bootstrap Servers</div>
+          <div class="surface-muted">{{ resultDetail.bootstrapServers || '-' }}</div>
+        </div>
+
+        <div class="detail-section">
+          <div class="section-title">状态说明</div>
+          <div class="surface-muted">{{ buildRowSummary(resultDetail) }}</div>
+        </div>
+
+        <div class="detail-section" v-if="detailBrokerRows.length">
+          <div class="section-title">Broker 节点</div>
+          <el-table :data="detailBrokerRows" empty-text="暂无 Broker 节点">
+            <el-table-column prop="address" label="地址" min-width="220" />
+            <el-table-column prop="brokerId" label="Broker ID" width="110" />
+            <el-table-column label="监听器" min-width="260">
+              <template #default="{ row }">{{ row.listenersText || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="version" label="版本" width="120" />
+          </el-table>
+        </div>
+
+        <div class="detail-section" v-if="detailAccessRows.length">
+          <div class="section-title">访问入口</div>
+          <el-table :data="detailAccessRows" empty-text="暂无访问入口">
+            <el-table-column prop="address" label="地址" min-width="220" />
+            <el-table-column prop="version" label="版本" width="120" />
+            <el-table-column prop="errorMessage" label="错误信息" min-width="320" show-overflow-tooltip />
+          </el-table>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="resultDetailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="importVisible" title="导入为 Kafka 集群" width="min(680px, calc(100vw - 32px))" destroy-on-close>
       <el-form label-position="top" :model="importForm">
         <el-alert
           v-if="importSource?.versionDetectError"
+          class="dialog-alert"
           type="warning"
           :closable="false"
           show-icon
           :title="`Kafka 版本自动探测失败：${importSource.versionDetectError}`"
-          style="margin-bottom: 16px"
         />
         <el-row :gutter="16">
           <el-col :span="12">
@@ -367,27 +542,37 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="batchImportVisible" title="批量导入 Kafka 集群" width="920px" destroy-on-close>
+    <el-dialog
+      v-model="batchImportVisible"
+      title="批量导入 Kafka 集群"
+      width="min(920px, calc(100vw - 32px))"
+      destroy-on-close
+      :close-on-click-modal="!batchImporting"
+      :close-on-press-escape="!batchImporting"
+      :before-close="handleBatchImportDialogBeforeClose"
+    >
       <el-alert
+        class="dialog-alert"
         type="info"
         :closable="false"
         show-icon
-        :title="`已选择 ${selectedClusters.length} 个集群，将按顺序逐个导入`"
-        style="margin-bottom: 16px"
+        :title="batchImporting ? `正在导入，已选择 ${selectedCount} 个集群` : `已选择 ${selectedCount} 个集群，将按顺序逐个导入`"
       />
 
-      <el-row :gutter="16">
-        <el-col :span="12">
-          <el-form-item label="统一环境">
-            <el-input v-model="batchImportForm.environment" placeholder="dev/test/prod" />
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="统一租户">
-            <el-input v-model="batchImportForm.tenant" placeholder="例如 core-team" />
-          </el-form-item>
-        </el-col>
-      </el-row>
+      <el-form label-position="top" :model="batchImportForm">
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="统一环境">
+              <el-input v-model="batchImportForm.environment" placeholder="dev/test/prod" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="统一租户">
+              <el-input v-model="batchImportForm.tenant" placeholder="例如 core-team" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+      </el-form>
 
       <div class="batch-list">
         <div v-for="item in batchImportItems" :key="item.key" class="batch-item">
@@ -419,15 +604,17 @@
 
           <div class="batch-address">{{ item.address }}</div>
           <div class="batch-hint">
-            {{ item.versionDetectError || `将以 ${item.detectedVersion || item.version || '当前配置'} 导入` }}
+            {{ item.importError || item.versionDetectError || `将以 ${item.detectedVersion || item.version || '当前配置'} 导入` }}
           </div>
         </div>
       </div>
 
       <template #footer>
-        <el-button @click="batchImportVisible = false">取消</el-button>
+        <el-button @click="handleBatchImportDialogClose">
+          {{ batchImporting ? '停止并关闭' : '取消' }}
+        </el-button>
         <el-button type="primary" :loading="batchImporting" @click="batchImportClusters">
-          批量导入
+          {{ batchImporting ? '导入中...' : '批量导入' }}
         </el-button>
       </template>
     </el-dialog>
@@ -435,29 +622,38 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getKafkaClusters, importKafkaDiscoveryResult, probeKafkaBootstrapServers, scanKafkaNetwork } from '@/api/kafka.js'
 
 const LAST_DISCOVERY_VERSION_KEY = 'kafka-console:last-discovery-version'
 const DEFAULT_FALLBACK_VERSION = '3.9.0'
+const KAFKA_VERSION_PATTERN = /^\d+\.\d+(\.\d+)?$/
 
 const loading = ref(false)
 const importing = ref(false)
 const batchImporting = ref(false)
 const domainImporting = ref(false)
-const authMode = ref('none')
 const showAdvancedAuth = ref(false)
 const portsInput = ref('9092,9093,29092')
 const scanResults = ref([])
 const manualProbeResults = ref([])
-const results = ref([])
 const importVisible = ref(false)
 const batchImportVisible = ref(false)
+const resultDetailVisible = ref(false)
 const importSource = ref(null)
+const resultDetail = ref(null)
+const resultTableRef = ref(null)
 const selectedClusterKeys = ref([])
 const batchImportItems = ref([])
 const importedClusterMap = ref({})
+const batchImportAbortController = ref(null)
+const closeBatchImportAfterAbort = ref(false)
+const syncingTableSelection = ref(false)
+const discoveryPage = reactive({
+  page: 1,
+  pageSize: 48,
+})
 
 const scanForm = reactive({
   cidr: '',
@@ -487,7 +683,17 @@ const importForm = reactive({
   environment: '',
   tenant: '',
   description: '',
-  auth: {},
+  auth: {
+    version: '',
+    authType: 'none',
+    username: '',
+    password: '',
+    tlsEnabled: false,
+    insecureSkipVerify: false,
+    caCert: '',
+    clientCert: '',
+    clientKey: '',
+  },
 })
 
 const batchImportForm = reactive({
@@ -511,7 +717,40 @@ const domainImportForm = reactive({
   },
 })
 
-const dedupe = (items) => Array.from(new Set((items || []).filter(Boolean)))
+const authMode = computed({
+  get: () => {
+    if (scanForm.auth.tlsEnabled && scanForm.auth.authType === 'none') {
+      return 'tls'
+    }
+    return scanForm.auth.authType || 'none'
+  },
+  set: (value) => {
+    const nextValue = value || 'none'
+    scanForm.auth.authType = nextValue === 'tls' ? 'none' : nextValue
+    scanForm.auth.tlsEnabled = nextValue === 'tls'
+
+    if (nextValue !== 'none') {
+      showAdvancedAuth.value = true
+    }
+
+    if (nextValue === 'none') {
+      scanForm.auth.username = ''
+      scanForm.auth.password = ''
+      scanForm.auth.tlsEnabled = false
+      scanForm.auth.insecureSkipVerify = false
+      scanForm.auth.caCert = ''
+      scanForm.auth.clientCert = ''
+      scanForm.auth.clientKey = ''
+    }
+  },
+})
+
+const dedupe = (items) =>
+  Array.from(
+    new Set(
+      (items || []).filter((item) => item !== undefined && item !== null && item !== ''),
+    ),
+  )
 const createEmptyAuthTemplate = () => ({
   version: '',
   authType: 'none',
@@ -535,7 +774,8 @@ const splitBootstrapServers = (value) =>
 const normalizeEndpointKey = (value) => String(value || '').trim().toLowerCase()
 const normalizeBootstrapServers = (value) =>
   splitBootstrapServers(value)
-    .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+    .map((item) => normalizeEndpointKey(item))
+    .sort()
     .join(',')
 const buildEndpointKeys = (items) =>
   dedupe(
@@ -573,9 +813,7 @@ const mergeDiscoveryResultList = (...groups) => {
     return String(a.address || '').localeCompare(String(b.address || ''), 'zh-CN')
   })
 }
-const rebuildDiscoveryResults = () => {
-  results.value = mergeDiscoveryResultList(scanResults.value, manualProbeResults.value)
-}
+const results = computed(() => mergeDiscoveryResultList(scanResults.value, manualProbeResults.value))
 const resolveClusterAuthTemplate = (row) => {
   const candidates = (row.members || [])
     .map((member) => member.authTemplate)
@@ -650,7 +888,7 @@ const clusterSummaries = computed(() => {
         listenerCount: dedupe(members.flatMap((member) => member.listeners || [])).length,
         brokerMembers,
         accessEntries,
-        brokerCount: brokerMembers.length || dedupe(members.flatMap((member) => member.listeners || [])).length,
+        brokerCount: brokerMembers.length,
         accessEntryCount: accessEntries.length,
         kafkaVersion,
         versionDetectError,
@@ -715,13 +953,23 @@ const duplicateClusterHints = computed(() => {
     seen.set(normalized, row.clusterId || row.bootstrapServers)
   })
 
-  return duplicates.slice(0, 6)
+  if (duplicates.length <= 6) return duplicates
+
+  return [
+    ...duplicates.slice(0, 6),
+    {
+      key: 'duplicate:more',
+      title: '更多重复入口',
+      description: `还有 ${duplicates.length - 6} 条重复或已导入提示未展开，请继续使用搜索或筛选排查。`,
+      type: 'more',
+    },
+  ]
 })
 
 const importPrecheckItems = computed(() => {
-  const visibleKafkaClusters = filteredClusters.value.filter((row) => row.looksLikeKafka)
-  const versionPendingCount = visibleKafkaClusters.filter((row) => row.versionDetectError).length
-  const duplicatedCount = visibleKafkaClusters.filter((row) => isImportedCluster(row)).length
+  const kafkaClusters = clusterSummaries.value.filter((row) => row.looksLikeKafka)
+  const versionPendingCount = kafkaClusters.filter((row) => row.versionDetectError).length
+  const duplicatedCount = kafkaClusters.filter((row) => isImportedCluster(row)).length
   const authConfigured = authMode.value !== 'none' || scanForm.auth.tlsEnabled
   const tlsReady = !scanForm.auth.tlsEnabled || !!String(scanForm.auth.caCert || '').trim() || scanForm.auth.insecureSkipVerify
 
@@ -790,8 +1038,43 @@ const filteredClusters = computed(() => {
   })
 })
 
+const pagedClusters = computed(() => {
+  const start = (discoveryPage.page - 1) * discoveryPage.pageSize
+  return filteredClusters.value.slice(start, start + discoveryPage.pageSize)
+})
+
+const selectedCount = computed(() => selectedClusterKeys.value.length)
 const selectedClusters = computed(() =>
   clusterSummaries.value.filter((row) => selectedClusterKeys.value.includes(row.key)),
+)
+
+const importedEndpointMap = computed(() => {
+  const endpointMap = {}
+  Object.values(importedClusterMap.value).forEach((item) => {
+    ;(item.endpointKeys || []).forEach((key) => {
+      if (!endpointMap[key]) {
+        endpointMap[key] = item
+      }
+    })
+  })
+  return endpointMap
+})
+
+const detailBrokerRows = computed(() =>
+  (resultDetail.value?.brokerMembers || []).map((member) => ({
+    address: member.address,
+    brokerId: member.brokerId,
+    listenersText: (member.listeners || []).join(', '),
+    version: member.kafkaVersion || '-',
+  })),
+)
+
+const detailAccessRows = computed(() =>
+  (resultDetail.value?.accessEntries || []).map((entry) => ({
+    address: entry.address,
+    version: entry.kafkaVersion || '-',
+    errorMessage: entry.errorMessage || '-',
+  })),
 )
 
 const collectClusterEndpointKeys = (row) =>
@@ -802,11 +1085,11 @@ const collectClusterEndpointKeys = (row) =>
 
 const findImportedClusterMetaByEndpointKeys = (endpointKeys) => {
   if (!endpointKeys.length) return null
-  return (
-    Object.values(importedClusterMap.value).find((item) =>
-      (item.endpointKeys || []).some((key) => endpointKeys.includes(key)),
-    ) || null
-  )
+  for (const key of endpointKeys) {
+    const matched = importedEndpointMap.value[key]
+    if (matched) return matched
+  }
+  return null
 }
 
 const findImportedClusterMeta = (row) => {
@@ -821,45 +1104,66 @@ const isImportedCluster = (row) => !!findImportedClusterMeta(row)
 
 const importedClusterMeta = (row) => findImportedClusterMeta(row)
 
-const applyAuthTemplate = () => {
-  scanForm.auth.authType = authMode.value === 'tls' ? 'none' : authMode.value
-  scanForm.auth.tlsEnabled = authMode.value === 'tls'
-  if (authMode.value !== 'none') {
-    showAdvancedAuth.value = true
-  }
-  if (authMode.value === 'none') {
-    scanForm.auth.username = ''
-    scanForm.auth.password = ''
-    scanForm.auth.tlsEnabled = false
-  }
-}
+const isSelectableRow = (row) => row.looksLikeKafka && !isImportedCluster(row)
 
 const getRememberedKafkaVersion = () => {
   const remembered = localStorage.getItem(LAST_DISCOVERY_VERSION_KEY)?.trim()
-  return remembered || DEFAULT_FALLBACK_VERSION
+  return KAFKA_VERSION_PATTERN.test(remembered || '') ? remembered : DEFAULT_FALLBACK_VERSION
 }
 
 const rememberKafkaVersion = (version) => {
   const normalized = String(version || '').trim()
-  if (!normalized) return
+  if (!KAFKA_VERSION_PATTERN.test(normalized)) return
   localStorage.setItem(LAST_DISCOVERY_VERSION_KEY, normalized)
 }
 
 const refreshImportedClusters = async () => {
   try {
-    const res = await getKafkaClusters({ page: 1, pageSize: 500 })
-    const list = res?.data?.data?.list || []
     const nextMap = {}
-    list.forEach((item) => {
-      const key = normalizeBootstrapServers(item.bootstrapServers)
-      if (!key) return
-      nextMap[key] = {
-        id: item.id,
-        name: item.name,
-        status: item.status,
-        endpointKeys: buildEndpointKeys([item.bootstrapServers]),
-      }
-    })
+    const nextMapById = new Map()
+    const pageSize = 200
+    let page = 1
+    let total = 0
+    const seenPageSignatures = new Set()
+
+    while (true) {
+      const res = await getKafkaClusters({ page, pageSize })
+      const payload = res?.data?.data || {}
+      const list = payload.list || []
+      total = Number(payload.total || total || 0)
+      const pageSignature = [
+        page,
+        list.length,
+        list[0]?.id || '',
+        list[list.length - 1]?.id || '',
+      ].join(':')
+      if (seenPageSignatures.has(pageSignature)) break
+      seenPageSignatures.add(pageSignature)
+
+      list.forEach((item) => {
+        const key = normalizeBootstrapServers(item.bootstrapServers)
+        if (!key) return
+        const previousMeta = nextMapById.get(item.id) || Object.values(importedClusterMap.value).find((meta) => meta.id === item.id)
+        const nextMeta = {
+          id: item.id,
+          name: item.name,
+          status: item.status,
+          endpointKeys: dedupe([
+            ...buildEndpointKeys([item.bootstrapServers]),
+            ...(previousMeta?.endpointKeys || []),
+          ]),
+        }
+        nextMap[key] = nextMeta
+        nextMapById.set(item.id, nextMeta)
+      })
+
+      if (list.length === 0) break
+      if (total > 0 && page * pageSize >= total) break
+      if (total === 0 && list.length < pageSize) break
+
+      page += 1
+    }
+
     importedClusterMap.value = nextMap
   } catch {
     // 页面辅助状态，失败时不阻断发现功能
@@ -886,20 +1190,17 @@ const parsePorts = () =>
     .map((item) => Number(item.trim()))
     .filter((item) => Number.isInteger(item) && item > 0 && item <= 65535)
 
-const buildMemberHint = (row) => {
-  if (!row.advertisedBroker && row.looksLikeKafka) {
-    return '该地址返回了 Kafka 集群元数据，但不在 broker listeners 中，已识别为访问入口。'
-  }
-  if (row.looksLikeKafka && row.kafkaVersion) {
-    return '版本已自动探测完成，可直接聚合到集群导入。'
-  }
-  if (row.looksLikeKafka) {
-    return '已识别为 Kafka 节点，但版本仍需确认。'
-  }
-  return '当前节点未识别为 Kafka，可忽略。'
-}
-
 const buildClusterHint = (row) => {
+  if (row.looksLikeKafka && row.brokerCount === 0 && row.listenerCount === 0) {
+    return row.accessEntryCount > 0
+      ? `未识别到 Broker 节点和监听器，仅识别到 ${row.accessEntryCount} 个访问入口，请先核对元数据。`
+      : '已识别为 Kafka 候选，但尚未拿到 Broker 和监听器信息，请先核对元数据。'
+  }
+  if (row.looksLikeKafka && row.brokerCount === 0 && row.listenerCount > 0) {
+    return row.accessEntryCount > 0
+      ? `未识别到 Broker 节点，仅识别到 ${row.listenerCount} 个监听器和 ${row.accessEntryCount} 个访问入口，请先核对元数据。`
+      : `未识别到 Broker 节点，仅识别到 ${row.listenerCount} 个监听器，请先核对元数据。`
+  }
   if (row.looksLikeKafka && row.kafkaVersion) {
     if (row.accessEntryCount > 0) {
       return `识别到 ${row.brokerCount} 个 Broker 节点，另有 ${row.accessEntryCount} 个访问入口；导入时只使用 broker listeners。`
@@ -915,33 +1216,79 @@ const buildClusterHint = (row) => {
   return '当前分组未识别为 Kafka 集群，可忽略。'
 }
 
-const isSelected = (key) => selectedClusterKeys.value.includes(key)
-
-const handleClusterSelection = (key, checked) => {
-  if (checked) {
-    if (!selectedClusterKeys.value.includes(key)) {
-      selectedClusterKeys.value = [...selectedClusterKeys.value, key]
-    }
-    return
-  }
-  selectedClusterKeys.value = selectedClusterKeys.value.filter((item) => item !== key)
+const buildRowSummary = (row) => {
+  const summaryParts = [
+    row.versionDetectError,
+    row.errorMessage,
+    buildClusterHint(row),
+  ].filter(Boolean)
+  return dedupe(summaryParts).join('；')
 }
 
-const selectVisibleClusters = () => {
-  const visibleKeys = filteredClusters.value
-    .filter((row) => row.looksLikeKafka && !isImportedCluster(row))
-    .map((row) => row.key)
-  selectedClusterKeys.value = dedupe([...selectedClusterKeys.value, ...visibleKeys])
+const isValidIpv4Cidr = (value) => {
+  const normalized = String(value || '').trim()
+  const match = normalized.match(/^(\d{1,3})(\.\d{1,3}){3}\/(\d|[12]\d|3[0-2])$/)
+  if (!match) return false
+
+  const [ipPart] = normalized.split('/')
+  return ipPart.split('.').every((segment) => {
+    const numericSegment = Number(segment)
+    return numericSegment >= 0 && numericSegment <= 255
+  })
 }
 
 const clearSelectedClusters = () => {
   selectedClusterKeys.value = []
 }
 
+const handleTableSelectionChange = (selection) => {
+  if (syncingTableSelection.value) return
+  const currentPageSelectableKeys = pagedClusters.value
+    .filter((row) => isSelectableRow(row))
+    .map((row) => row.key)
+  const selectedOnCurrentPage = selection.map((row) => row.key)
+  selectedClusterKeys.value = dedupe([
+    ...selectedClusterKeys.value.filter((key) => !currentPageSelectableKeys.includes(key)),
+    ...selectedOnCurrentPage,
+  ])
+}
+
+const syncTableSelection = async () => {
+  if (!resultTableRef.value) return
+  syncingTableSelection.value = true
+  await nextTick()
+  resultTableRef.value.clearSelection()
+  pagedClusters.value
+    .filter((row) => isSelectableRow(row) && selectedClusterKeys.value.includes(row.key))
+    .forEach((row) => {
+      resultTableRef.value.toggleRowSelection(row, true)
+    })
+  await nextTick()
+  syncingTableSelection.value = false
+}
+
+const openResultDetail = (rowKey) => {
+  resultDetail.value = clusterSummaries.value.find((row) => row.key === rowKey) || null
+  resultDetailVisible.value = true
+}
+
+const handleDiscoveryPageChange = (page) => {
+  discoveryPage.page = Number(page || 1)
+}
+
+const handleDiscoveryPageSizeChange = (pageSize) => {
+  discoveryPage.pageSize = Number(pageSize || 48)
+  discoveryPage.page = 1
+}
+
 const runScan = async () => {
   const ports = parsePorts()
   if (!scanForm.cidr || ports.length === 0) {
     ElMessage.warning('请填写 CIDR 和至少一个有效端口')
+    return
+  }
+  if (!isValidIpv4Cidr(scanForm.cidr)) {
+    ElMessage.warning('请输入合法的 IPv4 CIDR，例如 192.168.1.0/24')
     return
   }
 
@@ -955,8 +1302,8 @@ const runScan = async () => {
       auth: { ...scanForm.auth },
     })
     scanResults.value = attachDiscoveryAuth(res?.data?.data || [], scanForm.auth)
-    rebuildDiscoveryResults()
     clearSelectedClusters()
+    discoveryPage.page = 1
     batchImportVisible.value = false
     await refreshImportedClusters()
     ElMessage.success(`扫描完成，共返回 ${scanResults.value.length} 条节点结果，已自动按 Cluster ID 聚合`)
@@ -985,7 +1332,9 @@ const openImportDialog = (row) => {
 const resetDomainImportForm = () => {
   domainImportForm.address = ''
   domainImportForm.timeoutMs = 2500
-  domainImportForm.auth = createEmptyAuthTemplate()
+  Object.assign(domainImportForm.auth, createEmptyAuthTemplate(), {
+    version: getRememberedKafkaVersion(),
+  })
 }
 
 const probeByDomain = async () => {
@@ -1005,11 +1354,11 @@ const probeByDomain = async () => {
     const probedResults = attachDiscoveryAuth(res?.data?.data || [], domainImportForm.auth)
     rememberKafkaVersion(domainImportForm.auth.version)
     manualProbeResults.value = mergeDiscoveryResultList(manualProbeResults.value, probedResults)
-    rebuildDiscoveryResults()
     clearSelectedClusters()
+    discoveryPage.page = 1
     batchImportVisible.value = false
     await refreshImportedClusters()
-    domainImportForm.address = ''
+    resetDomainImportForm()
     ElMessage.success(`已识别 ${probedResults.length} 个入口，并合并到当前发现结果`)
   } catch (error) {
     ElMessage.error(error.message || '域名 / Bootstrap Servers 识别失败')
@@ -1020,7 +1369,7 @@ const probeByDomain = async () => {
 
 const importResult = async () => {
   if (!importForm.name || !importForm.address) {
-    ElMessage.warning('请填写集群名称')
+    ElMessage.warning('请填写集群名称并确认 Bootstrap Servers')
     return
   }
   if (importSource.value?.versionDetectError && !String(importForm.auth.version || '').trim()) {
@@ -1072,7 +1421,30 @@ const openBatchImportDialog = () => {
   }))
   batchImportForm.environment = ''
   batchImportForm.tenant = ''
+  closeBatchImportAfterAbort.value = false
   batchImportVisible.value = true
+}
+
+const isRequestCanceled = (error) =>
+  error?.code === 'ERR_CANCELED' ||
+  String(error?.message || '').toLowerCase().includes('canceled')
+
+const handleBatchImportDialogClose = () => {
+  if (!batchImporting.value) {
+    batchImportVisible.value = false
+    return
+  }
+  closeBatchImportAfterAbort.value = true
+  batchImportAbortController.value?.abort()
+}
+
+const handleBatchImportDialogBeforeClose = (done) => {
+  if (!batchImporting.value) {
+    done()
+    return
+  }
+  closeBatchImportAfterAbort.value = true
+  batchImportAbortController.value?.abort()
 }
 
 const batchImportClusters = async () => {
@@ -1094,42 +1466,125 @@ const batchImportClusters = async () => {
   }
 
   batchImporting.value = true
+  closeBatchImportAfterAbort.value = false
+  const controller = new AbortController()
+  batchImportAbortController.value = controller
+
   try {
-    for (const item of batchImportItems.value) {
-      const res = await importKafkaDiscoveryResult({
-        name: item.name.trim(),
-        address: item.address,
-        environment: batchImportForm.environment.trim(),
-        tenant: batchImportForm.tenant.trim(),
-        description: item.description,
-        auth: {
-          ...item.auth,
-          version: item.version,
-        },
-      })
-      rememberKafkaVersion(item.version)
-      const row = selectedClusters.value.find((cluster) => cluster.key === item.key)
-      if (row) {
-        markImportedCluster(row, {
-          id: res?.data?.data?.id,
+    const failedItems = []
+    let successCount = 0
+    let currentIndex = 0
+    let canceled = false
+    const clustersByKey = new Map(clusterSummaries.value.map((row) => [row.key, row]))
+
+    for (let index = 0; index < batchImportItems.value.length; index += 1) {
+      currentIndex = index
+      const item = batchImportItems.value[index]
+      if (controller.signal.aborted) {
+        canceled = true
+        break
+      }
+
+      try {
+        const res = await importKafkaDiscoveryResult({
           name: item.name.trim(),
-          status: res?.data?.data?.status,
+          address: item.address,
+          environment: batchImportForm.environment.trim(),
+          tenant: batchImportForm.tenant.trim(),
+          description: item.description,
+          auth: {
+            ...item.auth,
+            version: item.version,
+          },
+        }, { signal: controller.signal })
+        rememberKafkaVersion(item.version)
+        const row = clustersByKey.get(item.key)
+        if (row) {
+          markImportedCluster(row, {
+            id: res?.data?.data?.id,
+            name: item.name.trim(),
+            status: res?.data?.data?.status,
+          })
+        }
+        successCount += 1
+      } catch (error) {
+        if (isRequestCanceled(error)) {
+          canceled = true
+          break
+        }
+        failedItems.push({
+          ...item,
+          importError: error.message || '导入失败，请检查当前配置后重试',
         })
       }
+
     }
-    ElMessage.success(`批量导入成功，共导入 ${batchImportItems.value.length} 个集群`)
-    batchImportVisible.value = false
-    clearSelectedClusters()
-  } catch (error) {
-    ElMessage.error(error.message || '批量导入失败')
+
+    if (canceled) {
+      const pendingItems = batchImportItems.value.slice(currentIndex)
+      const remainingItems = [...failedItems, ...pendingItems]
+      batchImportItems.value = remainingItems
+      selectedClusterKeys.value = remainingItems.map((item) => item.key)
+      ElMessage.info(`批量导入已停止，成功 ${successCount} 个，剩余 ${remainingItems.length} 个待处理`)
+      if (closeBatchImportAfterAbort.value) {
+        batchImportVisible.value = false
+      }
+      return
+    }
+
+    if (failedItems.length === 0) {
+      ElMessage.success(`批量导入成功，共导入 ${successCount} 个集群`)
+      batchImportVisible.value = false
+      clearSelectedClusters()
+      return
+    }
+
+    batchImportItems.value = failedItems
+    selectedClusterKeys.value = failedItems.map((item) => item.key)
+    ElMessage.warning(`批量导入完成，成功 ${successCount} 个，失败 ${failedItems.length} 个，请修正后重试`)
   } finally {
+    batchImportAbortController.value = null
+    closeBatchImportAfterAbort.value = false
     batchImporting.value = false
   }
 }
 
+watch(
+  () => [filterForm.keyword, filterForm.scope],
+  () => {
+    discoveryPage.page = 1
+  },
+)
+
+watch(
+  () => clusterSummaries.value.map((row) => row.key),
+  (keys) => {
+    const keySet = new Set(keys)
+    selectedClusterKeys.value = selectedClusterKeys.value.filter((key) => keySet.has(key))
+  },
+)
+
+watch(
+  () => filteredClusters.value.length,
+  (length) => {
+    const totalPages = Math.max(1, Math.ceil(length / discoveryPage.pageSize))
+    if (discoveryPage.page > totalPages) {
+      discoveryPage.page = totalPages
+    }
+  },
+)
+
+watch(
+  () => [pagedClusters.value, selectedClusterKeys.value],
+  () => {
+    syncTableSelection()
+  },
+  { deep: true },
+)
+
 onMounted(() => {
   refreshImportedClusters()
-  domainImportForm.auth.version = getRememberedKafkaVersion()
+  resetDomainImportForm()
 })
 </script>
 
@@ -1145,9 +1600,18 @@ onMounted(() => {
   align-items: flex-start;
 }
 
+.dialog-alert {
+  margin-bottom: 16px;
+}
+
 .scan-actions-col {
   display: flex;
-  align-items: flex-end;
+  align-items: stretch;
+}
+
+.scan-actions-item {
+  width: 100%;
+  margin-bottom: 0;
 }
 
 .scan-actions {
@@ -1155,11 +1619,12 @@ onMounted(() => {
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  min-height: 56px;
+  min-height: 40px;
+  padding-top: 32px;
 }
 
 .scan-hint {
-  color: #718096;
+  color: var(--shell-text-soft);
   font-size: 13px;
 }
 
@@ -1167,13 +1632,13 @@ onMounted(() => {
   margin-top: 6px;
   padding: 18px 20px 4px;
   border-radius: 16px;
-  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
-  border: 1px solid #e8eef5;
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0.96) 0%, rgba(255, 255, 255, 0.98) 100%);
+  border: 1px solid rgba(148, 163, 184, 0.18);
 }
 
 .advanced-title {
   margin-bottom: 16px;
-  color: #1f2937;
+  color: var(--shell-text);
   font-size: 14px;
   font-weight: 600;
 }
@@ -1182,38 +1647,52 @@ onMounted(() => {
   margin: 20px 0;
 }
 
+.duplicate-hints {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.18);
+}
+
+.duplicate-hints-title {
+  margin-bottom: 10px;
+  color: var(--shell-text-soft);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 .summary-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-height: 124px;
   padding: 18px 20px;
-  border: 1px solid #e9eef5;
+  border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 18px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 251, 255, 0.96) 100%);
 }
 
 .summary-label {
-  color: #64748b;
+  color: var(--shell-text-soft);
   font-size: 13px;
 }
 
 .summary-value {
   font-size: 30px;
   line-height: 1;
-  color: #0f172a;
+  color: var(--shell-text);
 }
 
 .summary-desc {
   margin-top: auto;
-  color: #94a3b8;
+  color: var(--shell-text-soft);
   font-size: 12px;
 }
 
 .result-subtitle {
   display: inline-block;
   margin-left: 10px;
-  color: #94a3b8;
+  color: var(--shell-text-soft);
   font-size: 13px;
   font-weight: 400;
 }
@@ -1232,156 +1711,69 @@ onMounted(() => {
   width: 180px;
 }
 
-.cluster-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 16px;
+.result-table {
+  margin-top: 8px;
 }
 
-.cluster-card {
+.result-table-cell {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  min-height: 280px;
-  padding: 18px;
-  border: 1px solid #e7edf5;
-  border-radius: 20px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  gap: 4px;
 }
 
-.cluster-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
-}
-
-.cluster-card.is-selected {
-  border-color: rgba(64, 158, 255, 0.55);
-  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.12);
-}
-
-.cluster-card.is-warning {
-  background: linear-gradient(180deg, #ffffff 0%, #fffaf2 100%);
-}
-
-.cluster-card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.cluster-card-title {
-  display: inline-block;
-  max-width: 220px;
-  overflow: hidden;
-  color: #0f172a;
+.result-table-cell strong {
+  color: var(--shell-text);
+  font-size: 14px;
   font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
 }
 
-.cluster-card-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.cluster-card-metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.metric-item {
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: rgba(241, 245, 249, 0.8);
-}
-
-.metric-item span {
-  display: block;
-  margin-bottom: 6px;
-  color: #64748b;
+.result-table-cell span {
+  color: var(--shell-text-soft);
   font-size: 12px;
-}
-
-.metric-item strong {
-  color: #0f172a;
-  font-size: 20px;
-}
-
-.cluster-card-block {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.block-label {
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.block-value {
-  color: #0f172a;
-  font-size: 13px;
-  line-height: 1.7;
+  line-height: 1.5;
   word-break: break-word;
 }
 
-.block-value.muted {
-  color: #475569;
-}
-
-.cluster-card-members {
+.result-table-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: auto;
+  gap: 6px;
 }
 
-.member-chip {
-  padding: 6px 10px;
+.result-metrics-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.result-metric-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
   border-radius: 999px;
-  background: #eff6ff;
-  color: #2563eb;
+  background: rgba(241, 245, 249, 0.88);
+  color: var(--shell-text-soft);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.result-summary {
+  color: var(--shell-text-soft);
   font-size: 12px;
+  line-height: 1.55;
 }
 
-.member-chip.more {
-  background: #f1f5f9;
-  color: #64748b;
-}
-
-.member-chip.access {
-  background: #fff7ed;
-  color: #c2410c;
-}
-
-.access-entry-list {
+.detail-dialog-content {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  gap: 18px;
 }
 
-.cluster-card-actions {
+.result-pagination {
   display: flex;
   justify-content: flex-end;
-}
-
-.member-panel {
-  padding: 12px 8px 4px;
-}
-
-.member-title {
-  margin-bottom: 12px;
-  color: #334155;
-  font-size: 13px;
-  font-weight: 600;
+  margin-top: 18px;
 }
 
 .batch-list {
@@ -1395,9 +1787,9 @@ onMounted(() => {
 
 .batch-item {
   padding: 16px;
-  border: 1px solid #e7edf5;
+  border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 18px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 251, 255, 0.96) 100%);
 }
 
 .batch-item-head {
@@ -1410,17 +1802,17 @@ onMounted(() => {
 
 .batch-item-head strong {
   display: block;
-  color: #0f172a;
+  color: var(--shell-text);
 }
 
 .batch-item-head span {
-  color: #64748b;
+  color: var(--shell-text-soft);
   font-size: 12px;
 }
 
 .batch-address {
   margin-top: -4px;
-  color: #0f172a;
+  color: var(--shell-text);
   font-size: 13px;
   line-height: 1.7;
   word-break: break-word;
@@ -1428,28 +1820,13 @@ onMounted(() => {
 
 .batch-hint {
   margin-top: 8px;
-  color: #64748b;
+  color: var(--shell-text-soft);
   font-size: 12px;
-}
-
-.discovery-empty-state strong {
-  display: block;
-  margin-bottom: 6px;
-  color: #0f172a;
-  font-size: 14px;
-}
-
-.discovery-empty-state p {
-  margin: 0;
-  color: #64748b;
-  font-size: 13px;
-  line-height: 1.7;
 }
 
 @media (max-width: 960px) {
   .card-header,
   .result-filters,
-  .cluster-card-head,
   .batch-item-head {
     align-items: stretch;
     flex-direction: column;
@@ -1461,7 +1838,15 @@ onMounted(() => {
   }
 
   .scan-actions-col {
-    margin-top: -6px;
+    margin-top: 0;
+  }
+
+  .scan-actions {
+    padding-top: 0;
+  }
+
+  .result-pagination {
+    justify-content: flex-start;
   }
 }
 </style>

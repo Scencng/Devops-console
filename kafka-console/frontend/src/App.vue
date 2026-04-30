@@ -1,7 +1,5 @@
 <template>
   <div class="app-shell">
-    <div class="page-loading-bar" :class="{ 'is-active': uiStore.isPageLoading }"></div>
-
     <router-view v-slot="{ Component, route }">
       <transition name="page-fade" mode="out-in">
         <component :is="Component" :key="route.fullPath" />
@@ -42,24 +40,6 @@ html.dark {
   min-height: 100vh;
 }
 
-.page-loading-bar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 9999;
-  width: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #2f7df6 0%, #60a5fa 60%, #8b5cf6 100%);
-  box-shadow: 0 0 12px rgba(47, 125, 246, 0.35);
-  opacity: 0;
-  transition: width 0.36s ease, opacity 0.24s ease;
-}
-
-.page-loading-bar.is-active {
-  width: 68%;
-  opacity: 1;
-}
-
 .page-fade-enter-active,
 .page-fade-leave-active {
   transition: opacity 0.18s ease, transform 0.18s ease;
@@ -72,7 +52,6 @@ html.dark {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .page-loading-bar,
   .page-fade-enter-active,
   .page-fade-leave-active {
     transition: none !important;

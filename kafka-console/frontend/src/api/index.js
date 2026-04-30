@@ -2,6 +2,9 @@ import axios from 'axios'
 import { showError } from "@/utils/errorPopup.js";
 import { useUiStore } from '@/stores/uiStore.js'
 
+const hasLoginToken = () => Boolean(localStorage.getItem('access_token'))
+const isLoginPage = () => typeof window !== 'undefined' && window.location.pathname.includes('/login')
+
 // 创建axios实例
 const api = axios.create({
   baseURL: '/api/v1', // 直接使用相对路径，由nginx代理
@@ -39,11 +42,14 @@ api.interceptors.response.use(
 
     if (data.status !== 200) {
       if (data.status === 401) {
-        if (localStorage.getItem('access_token')) {
+        const hadToken = hasLoginToken()
+        if (hadToken) {
           localStorage.removeItem('access_token')
           localStorage.removeItem('refresh_token')
         }
-        showError(data.message || '登录已过期，请重新登录', '登录已过期')
+        if (hadToken && !isLoginPage()) {
+          showError(data.message || '登录已过期，请重新登录', '登录已过期')
+        }
       }
       throw new Error(data.message || '请求失败')
     }
@@ -54,8 +60,8 @@ api.interceptors.response.use(
     uiStore.decrementRequests()
     // 对响应错误做点什么
     if (error.response && error.response.status === 401) {
-      if (!window.location.pathname.includes('/login')) {
-        if (localStorage.getItem('access_token')) {
+      if (!isLoginPage() && hasLoginToken()) {
+        if (hasLoginToken()) {
           localStorage.removeItem('access_token')
           localStorage.removeItem('refresh_token')
         }

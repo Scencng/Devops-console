@@ -3,6 +3,32 @@
     <el-empty v-if="!selectedClusterId && !loading" description="请先创建并选择一个 Kafka 集群" />
 
     <template v-else>
+      <el-card class="page-header-card" shadow="never">
+        <div class="page-header">
+          <div class="page-header-copy">
+            <div class="page-eyebrow">Kafka</div>
+            <h2>Kafka 总览</h2>
+            <p>先确认集群规模、消费积压和风险热点，再进入 Topic、Broker 或消费组排查。</p>
+          </div>
+
+          <div class="page-header-side">
+            <div class="page-header-meta">
+              <div class="page-header-kpi">
+                <span>当前集群</span>
+                <strong>{{ currentClusterName }}</strong>
+              </div>
+              <div class="page-header-kpi">
+                <span>风险数量</span>
+                <strong>{{ operationRecommendations.length }}</strong>
+              </div>
+            </div>
+            <div class="page-header-actions">
+              <el-button @click="loadDashboard" :loading="loading">刷新</el-button>
+            </div>
+          </div>
+        </div>
+      </el-card>
+
       <el-card class="content-card filter-card">
         <div class="toolbar-row">
           <div class="toolbar-left">
@@ -14,9 +40,6 @@
             >
               <el-option v-for="cluster in clusters" :key="cluster.id" :label="cluster.name" :value="cluster.id" />
             </el-select>
-          </div>
-          <div class="toolbar-right">
-            <el-button @click="loadDashboard" :loading="loading">刷新</el-button>
           </div>
         </div>
       </el-card>
@@ -77,22 +100,22 @@
         <template v-else>
           <el-table :data="dashboard.topLagGroups || []" empty-text="暂无消费组数据">
             <el-table-column prop="groupId" label="消费组" min-width="220" />
-          <el-table-column prop="state" label="状态" width="120">
-            <template #default="{ row }">
-              <el-tag :type="row.state === 'Stable' ? 'success' : 'warning'">
-                {{ row.state || 'Unknown' }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="memberCount" label="成员数" width="120" />
-          <el-table-column prop="partitionCount" label="分区数" width="120" />
-          <el-table-column prop="committedLag" label="Lag" width="160" />
-          <el-table-column label="Topics" min-width="220">
-            <template #default="{ row }">{{ (row.topics || []).join(', ') || '-' }}</template>
-          </el-table-column>
+            <el-table-column prop="state" label="状态" width="120">
+              <template #default="{ row }">
+                <el-tag :type="row.state === 'Stable' ? 'success' : 'warning'">
+                  {{ row.state || 'Unknown' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="memberCount" label="成员数" width="120" />
+            <el-table-column prop="partitionCount" label="分区数" width="120" />
+            <el-table-column prop="committedLag" label="Lag" width="160" />
+            <el-table-column label="Topics" min-width="220">
+              <template #default="{ row }">{{ (row.topics || []).join(', ') || '-' }}</template>
+            </el-table-column>
           </el-table>
         </template>
-        </el-card>
+      </el-card>
 
     </template>
   </div>
@@ -100,12 +123,12 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
-import { getKafkaAuditLogs, getKafkaBrokers, getKafkaClusterOptions, getKafkaConsumerGroups, getKafkaDashboard, getKafkaTopics } from '@/api/kafka.js'
+import { getKafkaAuditLogs, getKafkaBrokers, getKafkaConsumerGroups, getKafkaDashboard, getKafkaTopics } from '@/api/kafka.js'
+import { useKafkaStore } from '@/stores/kafkaStore.js'
 
 const loading = ref(false)
-const clusters = ref([])
-const selectedClusterId = ref(null)
 const dashboard = ref({
   brokerCount: 0,
   topicCount: 0,
@@ -118,6 +141,8 @@ const brokers = ref([])
 const topics = ref([])
 const consumerGroups = ref([])
 const recentAuditLogs = ref([])
+const kafkaStore = useKafkaStore()
+const { clusterOptions: clusters, selectedClusterId } = storeToRefs(kafkaStore)
 
 const currentClusterName = computed(
   () => clusters.value.find((item) => item.id === selectedClusterId.value)?.name || '-',
@@ -127,7 +152,7 @@ const riskSummary = computed(() => ({
   unstableGroups: consumerGroups.value.filter((item) => item.state !== 'Stable').length,
   connectedBrokers: brokers.value.filter((item) => item.connected).length,
   internalTopics: topics.value.filter((item) => item.internal).length,
-  highLagGroups: consumerGroups.value.filter((item) => Number(item.committedLag || 0) > 0).length,
+  highLagGroups: consumerGroups.value.filter((item) => Number(item.committedLag || 0) >= 1000).length,
 }))
 
 const operationRecommendations = computed(() => {
@@ -220,15 +245,16 @@ const overviewMetricCards = computed(() => [
 ])
 
 const loadClusters = async () => {
-  const res = await getKafkaClusterOptions()
-  clusters.value = res?.data?.data || []
-  if (!selectedClusterId.value && clusters.value.length > 0) {
-    selectedClusterId.value = clusters.value[0].id
+  try {
+    await kafkaStore.loadClusterOptions()
+  } catch (error) {
+    ElMessage.error(error.message || 'Kafka 集群列表加载失败')
+    throw error
   }
 }
 
 const loadDashboard = async () => {
-  if (!selectedClusterId.value) return
+  if (loading.value || !selectedClusterId.value) return
   loading.value = true
   try {
     const [dashboardRes, brokersRes, topicsRes, groupsRes] = await Promise.all([
@@ -259,7 +285,9 @@ onMounted(async () => {
     await loadClusters()
     await loadDashboard()
   } catch (error) {
-    ElMessage.error(error.message || 'Kafka 集群列表加载失败')
+    if (!String(error?.message || '').includes('Kafka 集群列表加载失败')) {
+      ElMessage.error(error.message || 'Kafka 集群列表加载失败')
+    }
   }
 })
 </script>

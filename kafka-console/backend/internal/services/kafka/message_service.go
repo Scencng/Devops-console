@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -23,8 +24,8 @@ func (s *Service) BrowseMessages(req reqKafka.MessageBrowseRequest) (*response.K
 	if err != nil {
 		return nil, err
 	}
-	defer admin.Close()
 	defer client.Close()
+	defer admin.Close()
 
 	consumer, err := sarama.NewConsumerFromClient(client)
 	if err != nil {
@@ -80,6 +81,9 @@ func (s *Service) BrowseMessages(req reqKafka.MessageBrowseRequest) (*response.K
 	case "earliest":
 		startOffset = oldest
 	}
+	if startOffset >= newest {
+		return buildMessageBrowseResult(req.Topic, partition, startOffset, []response.KafkaMessageVO{}, false, false, "当前起始 Offset 已达到最新位置，暂无可返回的历史消息"), nil
+	}
 
 	partitionConsumer, err := consumer.ConsumePartition(req.Topic, partition, startOffset)
 	if err != nil {
@@ -88,34 +92,51 @@ func (s *Service) BrowseMessages(req reqKafka.MessageBrowseRequest) (*response.K
 	defer partitionConsumer.Close()
 
 	messages := make([]response.KafkaMessageVO, 0, limit)
-	deadline := time.After(3 * time.Second)
+	timeout := messageBrowseTimeout(limit)
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
 	keyword := strings.ToLower(strings.TrimSpace(req.Keyword))
+	endOffset := newest
 
 	for len(messages) < limit {
 		select {
-		case msg := <-partitionConsumer.Messages():
+		case msg, ok := <-partitionConsumer.Messages():
+			if !ok {
+				return buildMessageBrowseResult(req.Topic, partition, startOffset, messages, len(messages) > 0 && len(messages) < limit, false, "消息流已关闭，本次结果可能不完整"), nil
+			}
 			if msg == nil {
+				continue
+			}
+			if keyword != "" && !strings.Contains(strings.ToLower(searchableBytes(msg.Key)+" "+searchableBytes(msg.Value)), keyword) {
+				if msg.Offset >= endOffset-1 {
+					return buildMessageBrowseResult(req.Topic, partition, startOffset, messages, false, false, ""), nil
+				}
 				continue
 			}
 			keyPreview, keyBase64 := previewBytes(msg.Key)
 			valuePreview, valueBase64 := previewBytes(msg.Value)
-			if keyword != "" && !strings.Contains(strings.ToLower(keyPreview+" "+valuePreview), keyword) {
-				continue
-			}
 			headers := make([]response.KafkaMessageHeaderVO, 0, len(msg.Headers))
 			for _, header := range msg.Headers {
 				headerValue, _ := previewBytes(header.Value)
 				headers = append(headers, response.KafkaMessageHeaderVO{Key: string(header.Key), Value: headerValue})
 			}
 			messages = append(messages, response.KafkaMessageVO{Offset: msg.Offset, Partition: msg.Partition, Timestamp: msg.Timestamp, KeyPreview: keyPreview, ValuePreview: valuePreview, KeyBase64: keyBase64, ValueBase64: valueBase64, Headers: headers})
-		case <-deadline:
-			return &response.KafkaMessageBrowseVO{Topic: req.Topic, Partition: partition, StartOffset: startOffset, Count: len(messages), Messages: messages}, nil
-		case <-partitionConsumer.Errors():
-			continue
+			if msg.Offset >= endOffset-1 {
+				return buildMessageBrowseResult(req.Topic, partition, startOffset, messages, false, false, ""), nil
+			}
+		case <-deadline.C:
+			warning := fmt.Sprintf("消息拉取在 %s 内未完成，当前仅返回 %d 条结果", timeout.Round(time.Second), len(messages))
+			return buildMessageBrowseResult(req.Topic, partition, startOffset, messages, true, true, warning), nil
+		case consumeErr, ok := <-partitionConsumer.Errors():
+			if !ok || consumeErr == nil || consumeErr.Err == nil {
+				continue
+			}
+			warning := fmt.Sprintf("消息拉取过程中发生错误：%s", consumeErr.Err.Error())
+			return buildMessageBrowseResult(req.Topic, partition, startOffset, messages, len(messages) > 0, false, warning), nil
 		}
 	}
 
-	return &response.KafkaMessageBrowseVO{Topic: req.Topic, Partition: partition, StartOffset: startOffset, Count: len(messages), Messages: messages}, nil
+	return buildMessageBrowseResult(req.Topic, partition, startOffset, messages, false, false, ""), nil
 }
 
 func (s *Service) ProduceMessage(req reqKafka.MessageProduceRequest) (*response.KafkaMessageProduceVO, error) {
@@ -203,9 +224,7 @@ func previewBytes(data []byte) (string, string) {
 				text = string(prettyData)
 			}
 		}
-		if len(text) > 1000 {
-			text = text[:1000] + "..."
-		}
+		text = truncatePreviewText(text, 1000)
 		return text, base64Value
 	}
 	return base64Value, base64Value
@@ -227,4 +246,49 @@ func decodeEncodedBytes(raw, encoding string) ([]byte, error) {
 	default:
 		return nil, errors.New("不支持的消息编码类型")
 	}
+}
+
+func buildMessageBrowseResult(topic string, partition int32, startOffset int64, messages []response.KafkaMessageVO, partial, timedOut bool, warning string) *response.KafkaMessageBrowseVO {
+	return &response.KafkaMessageBrowseVO{
+		Topic:          topic,
+		Partition:      partition,
+		StartOffset:    startOffset,
+		Count:          len(messages),
+		Messages:       messages,
+		Partial:        partial,
+		TimedOut:       timedOut,
+		WarningMessage: warning,
+	}
+}
+
+func messageBrowseTimeout(limit int) time.Duration {
+	timeout := 3 * time.Second
+	if limit > 50 {
+		timeout += time.Duration((limit-1)/50) * time.Second
+	}
+	if timeout > 12*time.Second {
+		timeout = 12 * time.Second
+	}
+	return timeout
+}
+
+func truncatePreviewText(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit]) + "..."
+}
+
+func searchableBytes(data []byte) string {
+	if len(data) == 0 {
+		return ""
+	}
+	if utf8.Valid(data) {
+		return string(data)
+	}
+	return base64.StdEncoding.EncodeToString(data)
 }

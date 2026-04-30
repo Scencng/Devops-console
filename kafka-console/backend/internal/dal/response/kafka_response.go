@@ -11,8 +11,9 @@ type KafkaClusterVO struct {
 	Username           string     `json:"username"`
 	TLSEnabled         bool       `json:"tlsEnabled"`
 	InsecureSkipVerify bool       `json:"insecureSkipVerify"`
-	CACert             string     `json:"caCert"`
-	ClientCert         string     `json:"clientCert"`
+	HasCACert          bool       `json:"hasCACert"`
+	HasClientCert      bool       `json:"hasClientCert"`
+	HasClientKey       bool       `json:"hasClientKey"`
 	Description        string     `json:"description"`
 	Environment        string     `json:"environment"`
 	Tenant             string     `json:"tenant"`
@@ -21,6 +22,12 @@ type KafkaClusterVO struct {
 	LastTestedAt       *time.Time `json:"lastTestedAt"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
+}
+
+type KafkaClusterDetailVO struct {
+	KafkaClusterVO
+	CACert     string `json:"caCert"`
+	ClientCert string `json:"clientCert"`
 }
 
 type KafkaClusterListVO struct {
@@ -73,39 +80,42 @@ type KafkaTopicCreateVO struct {
 }
 
 type KafkaTopicPartitionsUpdateVO struct {
-	Name              string `json:"name"`
-	PreviousPartitions int32 `json:"previousPartitions"`
-	CurrentPartitions  int32 `json:"currentPartitions"`
+	Name               string `json:"name"`
+	PreviousPartitions int32  `json:"previousPartitions"`
+	CurrentPartitions  int32  `json:"currentPartitions"`
 }
 
 type KafkaTopicPartitionVO struct {
-	Partition           int32   `json:"partition"`
-	Leader              int32   `json:"leader"`
-	Replicas            []int32 `json:"replicas"`
-	ISR                 []int32 `json:"isr"`
-	OfflineReplicas     []int32 `json:"offlineReplicas"`
-	OutOfSyncReplicas   []int32 `json:"outOfSyncReplicas"`
-	UnderReplicated     bool    `json:"underReplicated"`
-	OldestOffset        int64   `json:"oldestOffset"`
-	LatestOffset        int64   `json:"latestOffset"`
-	MessageCountEstimate int64  `json:"messageCountEstimate"`
+	Partition            int32   `json:"partition"`
+	Leader               int32   `json:"leader"`
+	Replicas             []int32 `json:"replicas"`
+	ISR                  []int32 `json:"isr"`
+	OfflineReplicas      []int32 `json:"offlineReplicas"`
+	OutOfSyncReplicas    []int32 `json:"outOfSyncReplicas"`
+	UnderReplicated      bool    `json:"underReplicated"`
+	OldestOffset         int64   `json:"oldestOffset"`
+	LatestOffset         int64   `json:"latestOffset"`
+	MessageCountEstimate int64   `json:"messageCountEstimate"`
 }
 
 type KafkaTopicPartitionDetailVO struct {
-	Topic                string                 `json:"topic"`
-	PartitionCount       int                    `json:"partitionCount"`
-	UnderReplicatedCount int                    `json:"underReplicatedCount"`
+	Topic                string                  `json:"topic"`
+	PartitionCount       int                     `json:"partitionCount"`
+	UnderReplicatedCount int                     `json:"underReplicatedCount"`
 	Partitions           []KafkaTopicPartitionVO `json:"partitions"`
 }
 
 type KafkaConsumerGroupVO struct {
-	GroupID        string   `json:"groupId"`
-	ProtocolType   string   `json:"protocolType"`
-	State          string   `json:"state"`
-	MemberCount    int      `json:"memberCount"`
-	Topics         []string `json:"topics"`
-	PartitionCount int      `json:"partitionCount"`
-	CommittedLag   int64    `json:"committedLag"`
+	GroupID           string   `json:"groupId"`
+	ProtocolType      string   `json:"protocolType"`
+	State             string   `json:"state"`
+	MemberCount       int      `json:"memberCount"`
+	Topics            []string `json:"topics"`
+	PartitionCount    int      `json:"partitionCount"`
+	CommittedLag      int64    `json:"committedLag"`
+	LagAvailable      bool     `json:"lagAvailable"`
+	LagPartial        bool     `json:"lagPartial"`
+	LagWarningMessage string   `json:"lagWarningMessage"`
 }
 
 type KafkaConsumerGroupMemberVO struct {
@@ -116,26 +126,26 @@ type KafkaConsumerGroupMemberVO struct {
 }
 
 type KafkaConsumerGroupPartitionLagVO struct {
-	Topic         string `json:"topic"`
-	Partition     int32  `json:"partition"`
-	CommittedOffset int64 `json:"committedOffset"`
-	LatestOffset  int64  `json:"latestOffset"`
-	OldestOffset  int64  `json:"oldestOffset"`
-	Lag           int64  `json:"lag"`
-	MemberID      string `json:"memberId"`
-	ClientID      string `json:"clientId"`
-	ClientHost    string `json:"clientHost"`
+	Topic           string `json:"topic"`
+	Partition       int32  `json:"partition"`
+	CommittedOffset int64  `json:"committedOffset"`
+	LatestOffset    int64  `json:"latestOffset"`
+	OldestOffset    int64  `json:"oldestOffset"`
+	Lag             int64  `json:"lag"`
+	MemberID        string `json:"memberId"`
+	ClientID        string `json:"clientId"`
+	ClientHost      string `json:"clientHost"`
 }
 
 type KafkaConsumerGroupDetailVO struct {
-	GroupID        string                           `json:"groupId"`
-	ProtocolType   string                           `json:"protocolType"`
-	State          string                           `json:"state"`
-	MemberCount    int                              `json:"memberCount"`
-	PartitionCount int                              `json:"partitionCount"`
-	TotalLag       int64                            `json:"totalLag"`
-	Topics         []string                         `json:"topics"`
-	Members        []KafkaConsumerGroupMemberVO     `json:"members"`
+	GroupID        string                             `json:"groupId"`
+	ProtocolType   string                             `json:"protocolType"`
+	State          string                             `json:"state"`
+	MemberCount    int                                `json:"memberCount"`
+	PartitionCount int                                `json:"partitionCount"`
+	TotalLag       int64                              `json:"totalLag"`
+	Topics         []string                           `json:"topics"`
+	Members        []KafkaConsumerGroupMemberVO       `json:"members"`
 	Partitions     []KafkaConsumerGroupPartitionLagVO `json:"partitions"`
 }
 
@@ -145,10 +155,10 @@ type KafkaConsumerGroupOffsetResetPartitionVO struct {
 }
 
 type KafkaConsumerGroupOffsetResetVO struct {
-	GroupID       string                                   `json:"groupId"`
-	Topic         string                                   `json:"topic"`
-	AllPartitions bool                                     `json:"allPartitions"`
-	ResetType     string                                   `json:"resetType"`
+	GroupID       string                                     `json:"groupId"`
+	Topic         string                                     `json:"topic"`
+	AllPartitions bool                                       `json:"allPartitions"`
+	ResetType     string                                     `json:"resetType"`
 	Partitions    []KafkaConsumerGroupOffsetResetPartitionVO `json:"partitions"`
 }
 

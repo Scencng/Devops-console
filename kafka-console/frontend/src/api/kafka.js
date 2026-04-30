@@ -12,7 +12,7 @@ export const getKafkaDashboard = (clusterId) => api.get('/kafka/dashboard', { pa
 
 export const scanKafkaNetwork = (data) => api.post('/kafka/discovery/scan', data)
 export const probeKafkaBootstrapServers = (data) => api.post('/kafka/discovery/probe', data)
-export const importKafkaDiscoveryResult = (data) => api.post('/kafka/discovery/import', data)
+export const importKafkaDiscoveryResult = (data, config = {}) => api.post('/kafka/discovery/import', data, config)
 
 export const createKafkaTopic = (data) => api.post('/kafka/topics', data)
 export const getKafkaTopics = (params) => api.get('/kafka/topics', { params })
@@ -22,9 +22,12 @@ export const getKafkaTopicPartitions = (clusterId, topic) => api.get(`/kafka/top
 export const increaseKafkaTopicPartitions = (topic, data) => api.post(`/kafka/topics/${encodeURIComponent(topic)}/partitions`, data)
 
 export const getKafkaBrokers = (clusterId) => api.get('/kafka/brokers', { params: { clusterId } })
+export const updateKafkaBrokerConfig = (brokerId, clusterId, data) =>
+  api.put(`/kafka/brokers/${encodeURIComponent(brokerId)}/config`, data, { params: { clusterId } })
 
 export const getKafkaConsumerGroups = (params) => api.get('/kafka/consumer-groups', { params })
 export const getKafkaConsumerGroupDetail = (groupId, params) => api.get(`/kafka/consumer-groups/${encodeURIComponent(groupId)}`, { params })
+export const deleteKafkaConsumerGroup = (groupId, clusterId) => api.delete(`/kafka/consumer-groups/${encodeURIComponent(groupId)}`, { params: { clusterId } })
 export const resetKafkaGroupOffset = (groupId, data) => api.post(`/kafka/consumer-groups/${encodeURIComponent(groupId)}/reset-offset`, data)
 
 export const getKafkaMessages = (params) => api.get('/kafka/messages', { params })

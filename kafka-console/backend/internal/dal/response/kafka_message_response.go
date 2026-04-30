@@ -19,11 +19,14 @@ type KafkaMessageVO struct {
 }
 
 type KafkaMessageBrowseVO struct {
-	Topic       string           `json:"topic"`
-	Partition   int32            `json:"partition"`
-	StartOffset int64            `json:"startOffset"`
-	Count       int              `json:"count"`
-	Messages    []KafkaMessageVO `json:"messages"`
+	Topic          string           `json:"topic"`
+	Partition      int32            `json:"partition"`
+	StartOffset    int64            `json:"startOffset"`
+	Count          int              `json:"count"`
+	Messages       []KafkaMessageVO `json:"messages"`
+	Partial        bool             `json:"partial"`
+	TimedOut       bool             `json:"timedOut"`
+	WarningMessage string           `json:"warningMessage"`
 }
 
 type KafkaMessageProduceVO struct {

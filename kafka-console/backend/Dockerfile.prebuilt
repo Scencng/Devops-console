@@ -4,10 +4,11 @@ ENV TZ=Asia/Shanghai
 WORKDIR /app
 
 COPY devops ./
-COPY config/ ./config/
 
-RUN chmod +x ./devops
+RUN addgroup -S app && adduser -S -G app app && chmod +x ./devops && chown app:app ./devops
 
 EXPOSE 8081
+
+USER app
 
 CMD ["./devops"]

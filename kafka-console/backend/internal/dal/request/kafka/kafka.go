@@ -1,10 +1,10 @@
 package kafka
 
 type ClusterListRequest struct {
-	Page     int    `form:"page" json:"page" binding:"omitempty,min=1"`
-	PageSize int    `form:"pageSize" json:"pageSize" binding:"omitempty,min=1,max=100"`
-	Keyword  string `form:"keyword" json:"keyword" binding:"omitempty,max=100"`
-	Status   string `form:"status" json:"status" binding:"omitempty,oneof=active error unknown"`
+	Page        int    `form:"page" json:"page" binding:"omitempty,min=1"`
+	PageSize    int    `form:"pageSize" json:"pageSize" binding:"omitempty,min=1,max=100"`
+	Keyword     string `form:"keyword" json:"keyword" binding:"omitempty,max=100"`
+	Status      string `form:"status" json:"status" binding:"omitempty,oneof=active error unknown"`
 	Environment string `form:"environment" json:"environment" binding:"omitempty,max=64"`
 	Tenant      string `form:"tenant" json:"tenant" binding:"omitempty,max=64"`
 }
@@ -56,10 +56,10 @@ type TopicCreateConfigEntryRequest struct {
 }
 
 type CreateTopicRequest struct {
-	ClusterID         uint                           `json:"clusterId" binding:"required"`
-	Name              string                         `json:"name" binding:"required,max=255"`
-	NumPartitions     int32                          `json:"numPartitions" binding:"required,min=1"`
-	ReplicationFactor int16                          `json:"replicationFactor" binding:"required,min=1"`
+	ClusterID         uint                            `json:"clusterId" binding:"required"`
+	Name              string                          `json:"name" binding:"required,max=255"`
+	NumPartitions     int32                           `json:"numPartitions" binding:"required,min=1"`
+	ReplicationFactor int16                           `json:"replicationFactor" binding:"required,min=1"`
 	ConfigEntries     []TopicCreateConfigEntryRequest `json:"configEntries" binding:"omitempty,dive"`
 }
 
@@ -91,6 +91,7 @@ type ResetConsumerGroupOffsetRequest struct {
 	Topic         string `json:"topic" binding:"required,max=255"`
 	Partition     *int32 `json:"partition" binding:"omitempty,min=0"`
 	AllPartitions bool   `json:"allPartitions"`
+	Force         bool   `json:"force"`
 	ResetType     string `json:"resetType" binding:"required,oneof=earliest latest offset timestamp"`
 	Offset        int64  `json:"offset"`
 	TimestampMs   int64  `json:"timestampMs"`

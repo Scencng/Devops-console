@@ -25,8 +25,8 @@ func (s *Service) CreateTopic(req reqKafka.CreateTopicRequest) (*response.KafkaT
 	if err != nil {
 		return nil, err
 	}
-	defer admin.Close()
 	defer client.Close()
+	defer admin.Close()
 
 	configEntries := make(map[string]*string, len(req.ConfigEntries))
 	for _, entry := range req.ConfigEntries {
@@ -67,8 +67,8 @@ func (s *Service) IncreaseTopicPartitions(topic string, req reqKafka.IncreaseTop
 	if err != nil {
 		return nil, err
 	}
-	defer admin.Close()
 	defer client.Close()
+	defer admin.Close()
 
 	currentPartitions, err := client.Partitions(topic)
 	if err != nil {
@@ -102,8 +102,8 @@ func (s *Service) DescribeTopicPartitions(clusterID uint, topic string) (*respon
 	if err != nil {
 		return nil, err
 	}
-	defer admin.Close()
 	defer client.Close()
+	defer admin.Close()
 
 	metadata, err := admin.DescribeTopics([]string{topic})
 	if err != nil {

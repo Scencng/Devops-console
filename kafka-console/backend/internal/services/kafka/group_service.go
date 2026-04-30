@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -17,6 +18,42 @@ type assignedGroupMember struct {
 	clientHost string
 }
 
+// DeleteConsumerGroup only succeeds when the group is already in Empty state.
+// Kafka does not allow deleting active consumer groups, so we fail fast before
+// invoking sarama.ClusterAdmin.DeleteConsumerGroup.
+func (s *Service) DeleteConsumerGroup(clusterID uint, groupID string) error {
+	groupID = strings.TrimSpace(groupID)
+	if groupID == "" {
+		return errors.New("消费组不能为空")
+	}
+	cluster, err := s.repo.GetByID(clusterID)
+	if err != nil {
+		return err
+	}
+	client, admin, err := s.openClients(cluster)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	defer admin.Close()
+
+	groups, err := admin.DescribeConsumerGroups([]string{groupID})
+	if err != nil {
+		return err
+	}
+	if len(groups) == 0 || groups[0] == nil {
+		return errors.New("消费组不存在")
+	}
+	group := groups[0]
+	if len(group.Members) > 0 {
+		return fmt.Errorf("消费组当前仍有 %d 个活跃成员（状态：%s），请先停止消费者后再删除", len(group.Members), group.State)
+	}
+	if !strings.EqualFold(strings.TrimSpace(group.State), "Empty") {
+		return fmt.Errorf("消费组当前状态为 %s，仅 Empty 状态允许删除", group.State)
+	}
+	return admin.DeleteConsumerGroup(groupID)
+}
+
 func (s *Service) GetConsumerGroupDetail(groupID string, req reqKafka.ConsumerGroupDetailRequest) (*response.KafkaConsumerGroupDetailVO, error) {
 	groupID = strings.TrimSpace(groupID)
 	if groupID == "" {
@@ -30,8 +67,8 @@ func (s *Service) GetConsumerGroupDetail(groupID string, req reqKafka.ConsumerGr
 	if err != nil {
 		return nil, err
 	}
-	defer admin.Close()
 	defer client.Close()
+	defer admin.Close()
 
 	groups, err := admin.DescribeConsumerGroups([]string{groupID})
 	if err != nil {
@@ -42,7 +79,13 @@ func (s *Service) GetConsumerGroupDetail(groupID string, req reqKafka.ConsumerGr
 	}
 	group := groups[0]
 
-	offsets, err := admin.ListConsumerGroupOffsets(groupID, nil)
+	var topicFilter map[string][]int32
+	if req.Topic != "" {
+		topicFilter = map[string][]int32{
+			req.Topic: nil,
+		}
+	}
+	offsets, err := admin.ListConsumerGroupOffsets(groupID, topicFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -113,11 +156,14 @@ func (s *Service) GetConsumerGroupDetail(groupID string, req reqKafka.ConsumerGr
 			if latestErr != nil {
 				latestOffset = -1
 			}
-			lag := int64(0)
-			if committedOffset >= 0 && latestOffset > committedOffset {
-				lag = latestOffset - committedOffset
+			lag := int64(-1)
+			if committedOffset >= 0 && latestOffset >= 0 {
+				lag = 0
+				if latestOffset > committedOffset {
+					lag = latestOffset - committedOffset
+				}
+				totalLag += lag
 			}
-			totalLag += lag
 			assigned := assignmentMap[topic][partitionID]
 			partitions = append(partitions, response.KafkaConsumerGroupPartitionLagVO{
 				Topic:           topic,

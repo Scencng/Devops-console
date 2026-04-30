@@ -26,28 +26,28 @@
             <template v-for="item in sidebarMenus" :key="item.id">
               <el-sub-menu v-if="hasChildren(item)" :index="String(item.id)">
                 <template #title>
-                  <el-icon v-if="item.icon"><component :is="item.icon" /></el-icon>
+                  <el-icon v-if="resolveMenuIcon(item.icon)"><component :is="resolveMenuIcon(item.icon)" /></el-icon>
                   <span>{{ item.name }}</span>
                 </template>
                 <template v-for="sub in item.children" :key="sub.id">
                   <el-sub-menu v-if="hasChildren(sub)" :index="String(sub.id)">
                     <template #title>
-                      <el-icon v-if="sub.icon"><component :is="sub.icon" /></el-icon>
+                      <el-icon v-if="resolveMenuIcon(sub.icon)"><component :is="resolveMenuIcon(sub.icon)" /></el-icon>
                       <span>{{ sub.name }}</span>
                     </template>
                     <el-menu-item v-for="leaf in sub.children" :key="leaf.id" :index="leaf.path">
-                      <el-icon v-if="leaf.icon"><component :is="leaf.icon" /></el-icon>
+                      <el-icon v-if="resolveMenuIcon(leaf.icon)"><component :is="resolveMenuIcon(leaf.icon)" /></el-icon>
                       <template #title>{{ leaf.name }}</template>
                     </el-menu-item>
                   </el-sub-menu>
                   <el-menu-item v-else :index="sub.path">
-                    <el-icon v-if="sub.icon"><component :is="sub.icon" /></el-icon>
+                    <el-icon v-if="resolveMenuIcon(sub.icon)"><component :is="resolveMenuIcon(sub.icon)" /></el-icon>
                     <template #title>{{ sub.name }}</template>
                   </el-menu-item>
                 </template>
               </el-sub-menu>
               <el-menu-item v-else :index="item.path">
-                <el-icon v-if="item.icon"><component :is="item.icon" /></el-icon>
+                <el-icon v-if="resolveMenuIcon(item.icon)"><component :is="resolveMenuIcon(item.icon)" /></el-icon>
                 <template #title>{{ item.name }}</template>
               </el-menu-item>
             </template>
@@ -72,7 +72,7 @@
                   class="collapsed-item"
                   :class="{ 'is-active': isMenuActive(item) }"
                 >
-                  <el-icon v-if="item.icon" size="20"><component :is="item.icon" /></el-icon>
+                  <el-icon v-if="resolveMenuIcon(item.icon)" size="20"><component :is="resolveMenuIcon(item.icon)" /></el-icon>
                 </button>
               </template>
 
@@ -85,15 +85,15 @@
                       <button
                         v-for="leaf in sub.children"
                         :key="leaf.id"
-                        type="button"
-                        class="flyout-item"
-                        :class="{ 'is-active': isMenuActive(leaf) }"
-                        @click="router.push(leaf.path)"
-                      >
-                        <el-icon v-if="leaf.icon"><component :is="leaf.icon" /></el-icon>
-                        <span>{{ leaf.name }}</span>
-                      </button>
-                    </template>
+                      type="button"
+                      class="flyout-item"
+                      :class="{ 'is-active': isMenuActive(leaf) }"
+                      @click="router.push(leaf.path)"
+                    >
+                      <el-icon v-if="resolveMenuIcon(leaf.icon)"><component :is="resolveMenuIcon(leaf.icon)" /></el-icon>
+                      <span>{{ leaf.name }}</span>
+                    </button>
+                  </template>
                     <button
                       v-else
                       type="button"
@@ -101,7 +101,7 @@
                       :class="{ 'is-active': isMenuActive(sub) }"
                       @click="router.push(sub.path)"
                     >
-                      <el-icon v-if="sub.icon"><component :is="sub.icon" /></el-icon>
+                      <el-icon v-if="resolveMenuIcon(sub.icon)"><component :is="resolveMenuIcon(sub.icon)" /></el-icon>
                       <span>{{ sub.name }}</span>
                     </button>
                   </template>
@@ -122,7 +122,7 @@
                 :class="{ 'is-active': isMenuActive(item) }"
                 @click="router.push(item.path)"
               >
-                <el-icon v-if="item.icon" size="20"><component :is="item.icon" /></el-icon>
+                <el-icon v-if="resolveMenuIcon(item.icon)" size="20"><component :is="resolveMenuIcon(item.icon)" /></el-icon>
               </button>
             </el-tooltip>
           </template>
@@ -176,6 +176,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { CaretBottom, Connection, Expand, Fold } from '@element-plus/icons-vue'
 import { usePermissionStore } from '@/stores/permissionStore.js'
+import { resolveMenuIcon } from '@/utils/menuIcons.js'
 
 const route = useRoute()
 const router = useRouter()

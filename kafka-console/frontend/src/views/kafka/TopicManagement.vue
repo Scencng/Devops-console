@@ -1,5 +1,38 @@
 <template>
   <div class="page-container">
+    <el-card class="page-header-card" shadow="never">
+      <div class="page-header">
+        <div class="page-header-copy">
+          <div class="page-eyebrow">Kafka</div>
+          <h2>Topic 管理</h2>
+          <p>查看分区、副本与配置变更，危险操作统一放进确认弹窗，减少误操作噪音。</p>
+        </div>
+
+        <div class="page-header-side">
+          <div class="page-header-meta">
+            <div class="page-header-kpi">
+              <span>当前集群</span>
+              <strong>{{ selectedClusterName }}</strong>
+            </div>
+            <div class="page-header-kpi">
+              <span>重点 Topic</span>
+              <strong>{{ riskyTopics.length }}</strong>
+            </div>
+          </div>
+          <div class="page-header-actions">
+            <el-button @click="loadTopics" :loading="loading">刷新</el-button>
+            <el-button
+              v-if="permStore.hasPerm('kafka:topic:create') || permStore.roles.includes('admin')"
+              type="primary"
+              @click="openCreateDialog"
+            >
+              创建 Topic
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
     <div class="page-metrics">
       <div class="page-metric-card">
         <span>Topic 总数</span>
@@ -63,14 +96,7 @@
           />
         </div>
         <div class="toolbar-right">
-          <el-button @click="loadTopics" :loading="loading">刷新</el-button>
-          <el-button
-            v-if="permStore.hasPerm('kafka:topic:create') || permStore.roles.includes('admin')"
-            type="primary"
-            @click="openCreateDialog"
-          >
-            创建 Topic
-          </el-button>
+          <el-button type="primary" @click="loadTopics" :loading="loading">查询</el-button>
         </div>
       </div>
     </el-card>
@@ -79,7 +105,7 @@
       <template #header>
         <div class="card-header">
           <span>Topic 列表</span>
-          <span class="card-subtitle">Topic 列表</span>
+          <span class="card-subtitle">分区、副本与配置</span>
         </div>
       </template>
 
@@ -232,32 +258,20 @@
     <el-drawer v-model="partitionsDrawerVisible" :title="`ISR / 副本分配: ${partitionDetail.topic || ''}`" size="60%">
       <el-skeleton :loading="partitionsLoading" animated :rows="6">
         <template #default>
-          <el-row :gutter="16" class="partition-summary">
-            <el-col :span="8">
-              <el-card>
-                <div class="summary-item">
-                  <span>分区总数</span>
-                  <strong>{{ partitionDetail.partitionCount || 0 }}</strong>
-                </div>
-              </el-card>
-            </el-col>
-            <el-col :span="8">
-              <el-card>
-                <div class="summary-item">
-                  <span>副本异常分区</span>
-                  <strong>{{ partitionDetail.underReplicatedCount || 0 }}</strong>
-                </div>
-              </el-card>
-            </el-col>
-            <el-col :span="8">
-              <el-card>
-                <div class="summary-item">
-                  <span>Topic</span>
-                  <strong>{{ partitionDetail.topic || '-' }}</strong>
-                </div>
-              </el-card>
-            </el-col>
-          </el-row>
+          <div class="detail-summary-grid partition-summary">
+            <div class="detail-summary-card">
+              <span>分区总数</span>
+              <strong>{{ partitionDetail.partitionCount || 0 }}</strong>
+            </div>
+            <div class="detail-summary-card">
+              <span>副本异常分区</span>
+              <strong>{{ partitionDetail.underReplicatedCount || 0 }}</strong>
+            </div>
+            <div class="detail-summary-card">
+              <span>Topic</span>
+              <strong>{{ partitionDetail.topic || '-' }}</strong>
+            </div>
+          </div>
 
           <el-table :data="partitionDetail.partitions || []" empty-text="暂无分区明细">
             <el-table-column prop="partition" label="分区" width="90" />
@@ -290,28 +304,29 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import {
   createKafkaTopic,
   deleteKafkaTopic,
-  getKafkaClusterOptions,
   getKafkaTopicPartitions,
   getKafkaTopics,
   increaseKafkaTopicPartitions,
   updateKafkaTopicConfig,
 } from '@/api/kafka.js'
+import { useKafkaStore } from '@/stores/kafkaStore.js'
 import { usePermissionStore } from '@/stores/permissionStore.js'
-import { openKafkaRiskConfirm } from '@/utils/kafkaRiskConfirm.js'
+import { confirmKafkaRiskAction } from '@/utils/kafkaRiskConfirm.js'
 
 const permStore = usePermissionStore()
+const kafkaStore = useKafkaStore()
 
 const loading = ref(false)
 const saving = ref(false)
 const partitionsLoading = ref(false)
-const clusters = ref([])
-const selectedClusterId = ref(null)
 const keyword = ref('')
 const topics = ref([])
+const { clusterOptions: clusters, selectedClusterId } = storeToRefs(kafkaStore)
 
 const createDialogVisible = ref(false)
 const configDialogVisible = ref(false)
@@ -336,12 +351,21 @@ const expandForm = reactive({
   count: 1,
 })
 
-const partitionDetail = ref({
-  topic: '',
+const createEmptyPartitionDetail = (topic = '') => ({
+  topic,
   partitionCount: 0,
   underReplicatedCount: 0,
   partitions: [],
 })
+
+const partitionDetail = ref(createEmptyPartitionDetail())
+
+const createPartitionLookupPayload = (rowOrTopicName) => {
+  const topicName = typeof rowOrTopicName === 'string' ? rowOrTopicName : rowOrTopicName?.name
+  return topicName ? createEmptyPartitionDetail(topicName) : null
+}
+
+const partitionLookupFallbackMessage = '未找到可查看的 Topic'
 
 const createRules = {
   name: [{ required: true, message: '请输入 Topic 名称', trigger: 'blur' }],
@@ -408,15 +432,16 @@ const resetCreateForm = () => {
 }
 
 const loadClusters = async () => {
-  const res = await getKafkaClusterOptions()
-  clusters.value = res?.data?.data || []
-  if (!selectedClusterId.value && clusters.value.length > 0) {
-    selectedClusterId.value = clusters.value[0].id
+  try {
+    await kafkaStore.loadClusterOptions()
+  } catch (error) {
+    ElMessage.error(error.message || 'Kafka 集群列表加载失败')
+    throw error
   }
 }
 
 const loadTopics = async () => {
-  if (!selectedClusterId.value) return
+  if (loading.value || !selectedClusterId.value) return
   loading.value = true
   try {
     const res = await getKafkaTopics({ clusterId: selectedClusterId.value, keyword: keyword.value })
@@ -433,10 +458,6 @@ const addCreateConfigRow = () => {
 }
 
 const removeCreateConfigRow = (index) => {
-  if (createConfigRows.value.length === 1) {
-    createConfigRows.value[0] = { key: '', value: '' }
-    return
-  }
   createConfigRows.value.splice(index, 1)
 }
 
@@ -451,7 +472,7 @@ const handleCreateTopic = async () => {
   const configEntries = createConfigRows.value
     .filter((item) => item.key && item.key.trim())
     .map((item) => ({ key: item.key.trim(), value: String(item.value ?? '') }))
-  await openKafkaRiskConfirm({
+  const confirmed = await confirmKafkaRiskAction({
     title: '创建 Topic 确认',
     resourceName: createForm.name.trim(),
     actionLabel: '创建 Topic',
@@ -462,6 +483,7 @@ const handleCreateTopic = async () => {
     ],
     confirmButtonText: '确认创建',
   })
+  if (!confirmed) return
   saving.value = true
   try {
     await createKafkaTopic({
@@ -486,10 +508,6 @@ const addConfigRow = () => {
 }
 
 const removeConfigRow = (index) => {
-  if (configRows.value.length === 1) {
-    configRows.value[0] = emptyConfigRow()
-    return
-  }
   configRows.value.splice(index, 1)
 }
 
@@ -517,7 +535,7 @@ const handleUpdateConfig = async () => {
     ElMessage.warning('请至少填写一条配置项')
     return
   }
-  await openKafkaRiskConfirm({
+  const confirmed = await confirmKafkaRiskAction({
     title: 'Topic 配置变更确认',
     resourceName: activeTopic.value.name,
     actionLabel: '修改 Topic 配置',
@@ -528,6 +546,7 @@ const handleUpdateConfig = async () => {
     ],
     confirmButtonText: '确认保存配置',
   })
+  if (!confirmed) return
   saving.value = true
   try {
     await updateKafkaTopicConfig(activeTopic.value.name, {
@@ -553,7 +572,7 @@ const openExpandDialog = (row) => {
 
 const handleIncreasePartitions = async () => {
   if (!selectedClusterId.value || !expandForm.topic) return
-  await openKafkaRiskConfirm({
+  const confirmed = await confirmKafkaRiskAction({
     title: '扩分区确认',
     resourceName: expandForm.topic,
     actionLabel: '增加 Topic 分区',
@@ -564,6 +583,7 @@ const handleIncreasePartitions = async () => {
     ],
     confirmButtonText: '确认扩分区',
   })
+  if (!confirmed) return
   saving.value = true
   try {
     await increaseKafkaTopicPartitions(expandForm.topic, {
@@ -573,7 +593,7 @@ const handleIncreasePartitions = async () => {
     ElMessage.success('Topic 分区扩容成功')
     expandDialogVisible.value = false
     await loadTopics()
-    await openPartitionsDrawer({ name: expandForm.topic })
+    await openPartitionsDrawer(expandForm.topic)
   } catch (error) {
     ElMessage.error(error.message || 'Topic 分区扩容失败')
   } finally {
@@ -581,12 +601,19 @@ const handleIncreasePartitions = async () => {
   }
 }
 
-const openPartitionsDrawer = async (row) => {
+const openPartitionsDrawer = async (rowOrTopicName) => {
   if (!selectedClusterId.value) return
+  const nextPartitionDetail = createPartitionLookupPayload(rowOrTopicName)
+  if (!nextPartitionDetail) {
+    ElMessage.warning(partitionLookupFallbackMessage)
+    return
+  }
+
   partitionsDrawerVisible.value = true
+  partitionDetail.value = nextPartitionDetail
   partitionsLoading.value = true
   try {
-    const res = await getKafkaTopicPartitions(selectedClusterId.value, row.name)
+    const res = await getKafkaTopicPartitions(selectedClusterId.value, nextPartitionDetail.topic)
     partitionDetail.value = res?.data?.data || partitionDetail.value
   } catch (error) {
     ElMessage.error(error.message || 'Topic 分区详情加载失败')
@@ -600,7 +627,7 @@ const handleDelete = async (row) => {
     ElMessage.warning('内部 Topic 不允许删除')
     return
   }
-  await openKafkaRiskConfirm({
+  const confirmed = await confirmKafkaRiskAction({
     title: '删除 Topic 确认',
     resourceName: row.name,
     actionLabel: '删除 Topic',
@@ -611,6 +638,7 @@ const handleDelete = async (row) => {
     ],
     confirmButtonText: '确认删除',
   })
+  if (!confirmed) return
   try {
     await deleteKafkaTopic(selectedClusterId.value, row.name)
     ElMessage.success('Topic 已删除')
@@ -630,51 +658,15 @@ onMounted(async () => {
     await loadClusters()
     await loadTopics()
   } catch (error) {
-    ElMessage.error(error.message || 'Kafka 集群加载失败')
+    if (!String(error?.message || '').includes('Kafka 集群列表加载失败')) {
+      ElMessage.error(error.message || 'Kafka 集群加载失败')
+    }
   }
 })
 </script>
 
 <style scoped>
-.config-editor {
-  margin-top: 16px;
-}
-
-.config-row {
-  margin-bottom: 12px;
-}
-
-.row-actions {
-  display: flex;
-  align-items: center;
-}
-
-.editor-title {
-  margin-top: 8px;
-  margin-bottom: 12px;
-  font-weight: 600;
-}
-
 .expand-form {
   margin-top: 16px;
-}
-
-.partition-summary {
-  margin-bottom: 16px;
-}
-
-.summary-item {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.summary-item span {
-  color: #909399;
-}
-
-.summary-item strong {
-  font-size: 26px;
-  font-weight: 700;
 }
 </style>

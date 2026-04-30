@@ -84,7 +84,6 @@
 import { nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { SHA256 } from 'crypto-js'
 
 import { login } from '@/api/system/user.js'
 import {
@@ -104,6 +103,7 @@ const loginFormRef = ref(null)
 const usernameInputRef = ref(null)
 const loading = ref(false)
 const rememberMe = ref(false)
+let sha256Loader = null
 
 const loginForm = reactive({
   username: '',
@@ -123,6 +123,30 @@ const showPendingMessage = (featureName) => {
   ElMessage.info(buildPendingMessage(featureName, LOGIN_COPY.featurePendingSuffix))
 }
 
+const getSHA256 = async () => {
+  if (!sha256Loader) {
+    sha256Loader = import('crypto-js').then((module) => module.SHA256)
+  }
+  return sha256Loader
+}
+
+const warmPostLoginShell = async () => {
+  if (!localStorage.getItem('access_token')) {
+    return
+  }
+
+  const [{ usePermissionStore }] = await Promise.all([
+    import('@/stores/permissionStore.js'),
+    import('@/layouts/AppLayout.vue'),
+    import('@/views/Dashboard.vue'),
+  ])
+
+  const permStore = usePermissionStore()
+  if (!permStore.isLoaded) {
+    await permStore.loadUserAndRoutes(router)
+  }
+}
+
 const handleLogin = async () => {
   if (!loginFormRef.value || loading.value) return
 
@@ -131,6 +155,7 @@ const handleLogin = async () => {
     if (!valid) return
 
     loading.value = true
+    const SHA256 = await getSHA256()
     const res = await login({
       ...loginForm,
       username: loginForm.username.trim(),
@@ -150,6 +175,7 @@ const handleLogin = async () => {
       username: loginForm.username
     })
 
+    await warmPostLoginShell().catch(() => {})
     ElMessage.success(LOGIN_COPY.loginSuccess)
     router.push(resolveLoginRedirect(route))
   } catch (error) {
@@ -164,6 +190,19 @@ onMounted(async () => {
   if (rememberedUsername) {
     loginForm.username = rememberedUsername
     rememberMe.value = true
+  }
+  if (typeof window !== 'undefined') {
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(() => {
+        void getSHA256()
+        void warmPostLoginShell().catch(() => {})
+      })
+    } else {
+      window.setTimeout(() => {
+        void getSHA256()
+        void warmPostLoginShell().catch(() => {})
+      }, 800)
+    }
   }
   await nextTick()
   focusUsername()

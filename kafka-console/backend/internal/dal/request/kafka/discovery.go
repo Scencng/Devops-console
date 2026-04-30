@@ -28,7 +28,7 @@ type DiscoveryProbeRequest struct {
 
 type DiscoveryImportRequest struct {
 	Name        string                       `json:"name" binding:"required,max=191"`
-	Address     string                       `json:"address" binding:"required,max=255"`
+	Address     string                       `json:"address" binding:"required,max=2000"`
 	Environment string                       `json:"environment" binding:"omitempty,max=64"`
 	Tenant      string                       `json:"tenant" binding:"omitempty,max=64"`
 	Description string                       `json:"description"`

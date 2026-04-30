@@ -138,16 +138,32 @@ func LoadConfig() error {
 	viper.SetEnvPrefix("DEVOPS")
 	viper.AutomaticEnv()
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	viper.BindEnv("database.mysql.host", "DB_HOST")
-	viper.BindEnv("database.mysql.port", "DB_PORT")
-	viper.BindEnv("database.mysql.username", "DB_USER")
-	viper.BindEnv("database.mysql.password", "DB_PASSWORD")
-	viper.BindEnv("database.mysql.database", "DB_NAME")
-	viper.BindEnv("prometheus.base_url", "PROMETHEUS_BASE_URL")
+	bindEnv("database.mysql.host", "DB_HOST")
+	bindEnv("database.mysql.port", "DB_PORT")
+	bindEnv("database.mysql.username", "DB_USER")
+	bindEnv("database.mysql.password", "DB_PASSWORD")
+	bindEnv("database.mysql.database", "DB_NAME")
+	bindEnv("server.log_level", "SERVER_LOG_LEVEL")
+	bindEnv("swagger.enabled", "SWAGGER_ENABLED")
+	bindEnv("swagger.host", "SWAGGER_HOST")
+	bindEnv("health.interval", "HEALTH_INTERVAL")
+	bindEnv("redis.host", "REDIS_HOST")
+	bindEnv("redis.port", "REDIS_PORT")
+	bindEnv("redis.username", "REDIS_USERNAME")
+	bindEnv("redis.password", "REDIS_PASSWORD")
+	bindEnv("redis.db", "REDIS_DB")
+	bindEnv("jwt.secret", "JWT_SECRET")
+	bindEnv("jwt.expire-time", "JWT_EXPIRE_TIME")
+	bindEnv("jwt.refresh-expire-time", "JWT_REFRESH_EXPIRE_TIME")
+	bindEnv("prometheus.base_url", "PROMETHEUS_BASE_URL")
 	setDefaults()
 	if err := viper.ReadInConfig(); err != nil {
 		var configFileNotFoundError viper.ConfigFileNotFoundError
-		if errors.As(err, &configFileNotFoundError) { logs.Info(nil, "配置文件未找到，使用默认配置和环境变量") }
+		if errors.As(err, &configFileNotFoundError) {
+			logs.Info(nil, "配置文件未找到，使用默认配置和环境变量")
+		} else {
+			return fmt.Errorf("读取配置文件失败: %v", err)
+		}
 	}
 	if err := common.LoadConfig(); err != nil { return err }
 	Config = &AppConfig{}
@@ -172,12 +188,31 @@ func setDefaults() {
 	viper.SetDefault("database.mysql.parse_time", true)
 	viper.SetDefault("database.mysql.max_open_conns", 10)
 	viper.SetDefault("database.mysql.max_idle_conns", 5)
+	viper.SetDefault("logging.format", "json")
+	viper.SetDefault("logging.time_format", "2006-01-02 15:04:05")
+	viper.SetDefault("logging.report_caller", true)
 	viper.SetDefault("swagger.enabled", true)
 	viper.SetDefault("swagger.host", "localhost:8081")
 	viper.SetDefault("swagger.base_path", "/")
 	viper.SetDefault("health.enabled", true)
 	viper.SetDefault("health.endpoint", "/health")
 	viper.SetDefault("health.interval", 30)
+	viper.SetDefault("redis.host", "redis")
+	viper.SetDefault("redis.port", "6379")
+	viper.SetDefault("redis.username", "")
+	viper.SetDefault("redis.password", "ChangeThisRedisPassword")
+	viper.SetDefault("redis.db", 0)
+	viper.SetDefault("jwt.secret", "ChangeThisJwtSecretToALongRandomString")
+	viper.SetDefault("jwt.expire-time", 3600)
+	viper.SetDefault("jwt.refresh-expire-time", 604800)
+	viper.SetDefault("jwt.exclude-paths", []string{"/api/v1/system/login", "/swagger/*", "/metrics", "/health"})
 	viper.SetDefault("prometheus.base_url", "")
 	viper.SetDefault("prometheus.timeout", 10)
+}
+
+func bindEnv(key string, envNames ...string) {
+	args := append([]string{key}, envNames...)
+	if err := viper.BindEnv(args...); err != nil {
+		panic(fmt.Errorf("绑定环境变量失败 %s: %w", key, err))
+	}
 }

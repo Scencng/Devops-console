@@ -1,6 +1,9 @@
 param(
     [string]$ProjectDir = (Join-Path $PSScriptRoot "."),
     [string]$ArchivePrefix = "kafka-console-prebuilt",
+    [ValidateSet("gz", "xz")]
+    [string]$Compression = "xz",
+    [switch]$DisableUpx,
     [switch]$KeepStageDir
 )
 
@@ -34,9 +37,12 @@ $projectName = Split-Path $resolvedProjectDir -Leaf
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $stageRoot = Join-Path ([System.IO.Path]::GetTempPath()) "kafka-console-package-$timestamp"
 $stageProjectDir = Join-Path $stageRoot $projectName
-$archiveName = "$ArchivePrefix-$timestamp.tar.gz"
+$archiveName = if ($Compression -eq "xz") {
+    "$ArchivePrefix-$timestamp.tar.xz"
+} else {
+    "$ArchivePrefix-$timestamp.tar.gz"
+}
 $archivePath = Join-Path $resolvedProjectDir $archiveName
-$manifestPath = Join-Path $resolvedProjectDir "PREBUILT_MANIFEST.txt"
 $frontendDir = Join-Path $resolvedProjectDir "frontend"
 $frontendNodeModules = Join-Path $frontendDir "node_modules"
 $cleanupNodeModules = $false
@@ -66,6 +72,9 @@ if (-not (Test-Path -LiteralPath $frontendNodeModules)) {
     Push-Location $frontendDir
     try {
         npm ci
+        if ($LASTEXITCODE -ne 0) {
+            throw "前端依赖安装失败，退出码: $LASTEXITCODE"
+        }
         $cleanupNodeModules = $true
     }
     finally {
@@ -77,6 +86,9 @@ Write-Step "构建前端"
 Push-Location $frontendDir
 try {
     npm run build
+    if ($LASTEXITCODE -ne 0) {
+        throw "前端构建失败，退出码: $LASTEXITCODE"
+    }
 }
 finally {
     Pop-Location
@@ -92,36 +104,47 @@ New-Item -ItemType Directory -Force -Path $frontendStage | Out-Null
 Write-Step "在 WSL 中构建 Linux 后端二进制到临时打包目录"
 $wslProjectDir = Convert-ToWslPath $resolvedProjectDir
 $wslStageProjectDir = Convert-ToWslPath $stageProjectDir
-$wslBuildScript = Join-Path $stageRoot "build-backend.sh"
-$wslBuildScriptContent = @"
-#!/usr/bin/env sh
+$useUpx = if ($DisableUpx) { "false" } else { "true" }
+$wslBuildCommand = @"
 set -e
 mkdir -p '$wslStageProjectDir/backend'
 cd '$wslProjectDir/backend'
 export GOPROXY=https://goproxy.cn,direct
 export GOSUMDB=sum.golang.google.cn
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags='-s -w' -o '$wslStageProjectDir/backend/devops' ./cmd/server
+if [ "$useUpx" = "true" ]; then
+  if command -v upx >/dev/null 2>&1; then
+    upx --best --lzma '$wslStageProjectDir/backend/devops'
+    upx -t '$wslStageProjectDir/backend/devops'
+  elif command -v upx-ucl >/dev/null 2>&1; then
+    upx-ucl --best --lzma '$wslStageProjectDir/backend/devops'
+    upx-ucl -t '$wslStageProjectDir/backend/devops'
+  else
+    echo '[package][warn] WSL 中未找到 upx/upx-ucl，跳过二进制压缩' >&2
+  fi
+fi
 "@
-Set-Content -LiteralPath $wslBuildScript -Value $wslBuildScriptContent -Encoding UTF8
-$wslBuildScriptPath = Convert-ToWslPath $wslBuildScript
-wsl.exe sh $wslBuildScriptPath
+wsl.exe sh -lc $wslBuildCommand
+if ($LASTEXITCODE -ne 0) {
+    throw "WSL 后端构建失败，退出码: $LASTEXITCODE"
+}
 
 $topLevelFiles = @(
     ".env.example",
-    "deploy.sh",
-    "deploy-prebuilt.sh",
-    "release.sh",
-    "docker-compose.prebuilt.yml",
-    "README.md"
+    "DEPLOY_LINUX.md",
+    "docker-compose.prebuilt.yml"
 )
 foreach ($file in $topLevelFiles) {
-    Copy-PathIfExists (Join-Path $resolvedProjectDir $file) $stageProjectDir
+    if ($file -eq "docker-compose.prebuilt.yml") {
+        Copy-PathIfExists (Join-Path $resolvedProjectDir $file) $stageProjectDir "docker-compose.yml"
+    }
+    else {
+        Copy-PathIfExists (Join-Path $resolvedProjectDir $file) $stageProjectDir
+    }
 }
 
 Copy-PathIfExists (Join-Path $resolvedProjectDir "backend\Dockerfile.prebuilt") $backendStage
 Copy-PathIfExists (Join-Path $resolvedProjectDir "backend\sql") $backendStage
-Copy-PathIfExists (Join-Path $resolvedProjectDir "backend\config") $backendStage
-
 Copy-PathIfExists (Join-Path $resolvedProjectDir "frontend\Dockerfile.prebuilt") $frontendStage
 Copy-PathIfExists (Join-Path $resolvedProjectDir "frontend\nginx.conf") $frontendStage
 Copy-PathIfExists (Join-Path $resolvedProjectDir "frontend\dist") $frontendStage
@@ -140,12 +163,16 @@ $manifestLines = @(
     "FrontendDist=frontend/dist"
 )
 $manifestLines | Set-Content -LiteralPath (Join-Path $stageProjectDir "PREBUILT_MANIFEST.txt")
-Copy-Item -LiteralPath (Join-Path $stageProjectDir "PREBUILT_MANIFEST.txt") -Destination $manifestPath -Force
 
 Write-Step "打包为 $archiveName"
 Push-Location $stageRoot
 try {
-    tar -czf $archiveName $projectName
+    if ($Compression -eq "xz") {
+        tar -cJf $archiveName $projectName
+    }
+    else {
+        tar -czf $archiveName $projectName
+    }
     Move-Item -LiteralPath (Join-Path $stageRoot $archiveName) -Destination $archivePath -Force
 }
 finally {
@@ -158,11 +185,12 @@ if (-not $KeepStageDir -and (Test-Path $stageRoot)) {
 
 if ($cleanupNodeModules -and (Test-Path -LiteralPath $frontendNodeModules)) {
     Write-Step "清理临时安装的前端依赖"
-    cmd /c rmdir /s /q $frontendNodeModules | Out-Null
+    Remove-Item -LiteralPath $frontendNodeModules -Recurse -Force
 }
 
 Write-Step "完成: $archivePath"
 Write-Host "Linux 服务器推荐部署方式:" -ForegroundColor Yellow
 Write-Host "1. 上传 $archiveName 到服务器 /opt"
 Write-Host "2. 解压后进入项目目录"
-Write-Host "3. 执行 chmod +x release.sh && ./release.sh install"
+Write-Host "3. cp .env.example .env && 修改密码"
+Write-Host "4. 执行 docker compose up -d --build"

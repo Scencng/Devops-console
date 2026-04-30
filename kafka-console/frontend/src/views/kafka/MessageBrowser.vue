@@ -1,5 +1,41 @@
 <template>
   <div class="page-container">
+    <el-card class="page-header-card" shadow="never">
+      <div class="page-header">
+        <div class="page-header-copy">
+          <div class="page-eyebrow">Kafka</div>
+          <h2>消息浏览</h2>
+          <p>按 Topic / Partition 采样查看消息，发送测试消息前先看风险提示，再决定是否写入。</p>
+        </div>
+
+        <div class="page-header-side">
+          <div class="page-header-meta">
+            <div class="page-header-kpi">
+              <span>当前集群</span>
+              <strong>{{ currentClusterName }}</strong>
+            </div>
+            <div class="page-header-kpi">
+              <span>风险信号</span>
+              <strong>{{ currentTopicHints.length }}</strong>
+            </div>
+          </div>
+          <div class="page-header-note">
+            {{ currentTopicHints[0]?.description || '当前 Topic 没有明显的风险提示。' }}
+          </div>
+          <div class="page-header-actions">
+            <el-button @click="loadMessages" :loading="loading">刷新</el-button>
+            <el-button
+              v-if="permStore.hasPerm('kafka:message:produce') || permStore.roles.includes('admin')"
+              type="primary"
+              @click="openProduceDialog"
+            >
+              发消息
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
     <div class="page-metrics">
       <div class="page-metric-card">
         <span>当前 Topic</span>
@@ -18,19 +54,19 @@
     <el-card class="content-card">
       <template #header>
         <div class="card-header">
-          <span>发送风险</span>
-          <span class="card-subtitle">风险摘要</span>
+          <span>当前 Topic 提示</span>
+          <span class="card-subtitle">浏览前先确认上下文</span>
         </div>
       </template>
 
       <div class="compact-list">
-        <div v-for="item in sendRiskHints" :key="item.title" class="compact-item">
+        <div v-for="item in currentTopicHints" :key="item.title" class="compact-item">
           <div>
             <strong>{{ item.title }}</strong>
             <span>{{ item.description }}</span>
           </div>
-          <el-tag :type="item.level === 'high' ? 'danger' : 'warning'">
-            {{ item.level === 'high' ? '高风险' : '关注' }}
+          <el-tag :type="item.level === 'high' ? 'danger' : item.level === 'success' ? 'success' : 'warning'">
+            {{ item.level === 'high' ? '高风险' : item.level === 'success' ? '正常' : '关注' }}
           </el-tag>
         </div>
       </div>
@@ -56,20 +92,13 @@
           <el-input-number v-model="form.limit" :min="1" :max="500" style="width: 140px" />
         </div>
         <div class="toolbar-right">
-          <el-button @click="loadMessages" :loading="loading">查询</el-button>
-          <el-button
-            v-if="permStore.hasPerm('kafka:message:produce') || permStore.roles.includes('admin')"
-            type="primary"
-            @click="openProduceDialog"
-          >
-            发消息
-          </el-button>
+          <el-button type="primary" @click="loadMessages" :loading="loading">查询</el-button>
         </div>
       </div>
 
       <div class="toolbar-row secondary-toolbar">
         <div class="toolbar-left">
-          <el-input v-if="form.mode === 'offset'" v-model="form.offset" placeholder="指定 Offset" style="width: 180px" />
+          <el-input-number v-if="form.mode === 'offset'" v-model="form.offset" :min="0" placeholder="指定 Offset" style="width: 180px" />
           <el-input v-model="form.keyword" placeholder="按 key/value 过滤" style="width: 260px" />
         </div>
       </div>
@@ -79,11 +108,24 @@
       <template #header>
         <div class="card-header">
           <span>消息列表</span>
-          <span class="card-subtitle">{{ result.count || 0 }} 条</span>
+          <span class="card-subtitle">
+            {{ result.count || 0 }} 条
+            <template v-if="result.partial">{{ result.timedOut ? ' / 已截断' : ' / 部分结果' }}</template>
+          </span>
         </div>
       </template>
 
-      <el-table :data="result.messages || []" empty-text="暂无消息数据" height="600">
+      <el-alert
+        v-if="result.warningMessage"
+        class="table-alert"
+        :type="result.timedOut || result.partial ? 'warning' : 'info'"
+        :closable="false"
+        show-icon
+        :title="result.timedOut ? '本次消息浏览已提前结束' : '消息浏览提醒'"
+        :description="result.warningMessage"
+      />
+
+      <el-table :data="result.messages || []" empty-text="暂无消息数据">
         <el-table-column prop="offset" label="Offset" width="110" />
         <el-table-column prop="partition" label="Partition" width="100" />
         <el-table-column prop="timestamp" label="时间" width="180">
@@ -104,6 +146,40 @@
 
     <el-dialog v-model="produceDialogVisible" title="发送测试消息" width="760px" destroy-on-close>
       <el-form label-position="top">
+        <div class="produce-helper-grid">
+          <div class="surface-muted">
+            <div class="editor-title">快捷模板</div>
+            <div class="produce-helper-list">
+              <button
+                v-for="template in produceTemplates"
+                :key="template.key"
+                type="button"
+                class="produce-helper-card"
+                @click="applyProduceTemplate(template)"
+              >
+                <strong>{{ template.label }}</strong>
+                <span>{{ template.description }}</span>
+              </button>
+            </div>
+          </div>
+
+          <div v-if="reusableProduceLogs.length" class="surface-muted">
+            <div class="editor-title">最近发送</div>
+            <div class="produce-helper-list">
+              <button
+                v-for="log in reusableProduceLogs"
+                :key="log.id"
+                type="button"
+                class="produce-helper-card"
+                @click="reuseProduceLog(log)"
+              >
+                <strong>{{ log.topic || '未识别 Topic' }}</strong>
+                <span>{{ log.summary }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
         <el-row :gutter="16">
           <el-col :span="8">
             <el-form-item label="集群">
@@ -132,7 +208,9 @@
         <el-row :gutter="16">
           <el-col v-if="producePartitionMode === 'manual'" :span="8">
             <el-form-item label="Partition">
-              <el-input-number v-model="produceForm.partition" :min="0" style="width: 100%" />
+              <el-select v-model="produceForm.partition" style="width: 100%">
+                <el-option v-for="partition in producePartitionOptions" :key="partition" :label="String(partition)" :value="partition" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -229,25 +307,28 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import {
   getKafkaAuditLogs,
-  getKafkaClusterOptions,
   getKafkaMessages,
   getKafkaTopics,
   produceKafkaMessage,
 } from '@/api/kafka.js'
+import { useKafkaStore } from '@/stores/kafkaStore.js'
 import { usePermissionStore } from '@/stores/permissionStore.js'
-import { openKafkaRiskConfirm } from '@/utils/kafkaRiskConfirm.js'
+import { formatDateTime } from '@/utils/dateTime.js'
+import { confirmKafkaRiskAction } from '@/utils/kafkaRiskConfirm.js'
 
 const permStore = usePermissionStore()
+const kafkaStore = useKafkaStore()
 
 const loading = ref(false)
 const sending = ref(false)
-const clusters = ref([])
 const topics = ref([])
 const produceTopics = ref([])
-const result = ref({ count: 0, startOffset: 0, messages: [] })
+const result = ref({ count: 0, startOffset: 0, messages: [], partial: false, timedOut: false, warningMessage: '' })
+const hasQueried = ref(false)
 const produceDialogVisible = ref(false)
 const detailDrawerVisible = ref(false)
 const activeMessage = ref(null)
@@ -291,13 +372,14 @@ const produceTemplates = [
     },
   },
 ]
+const { clusterOptions: clusters, selectedClusterId: sharedClusterId } = storeToRefs(kafkaStore)
 
 const form = reactive({
   clusterId: null,
   topic: '',
   partition: 0,
   mode: 'latest',
-  offset: 0,
+  offset: null,
   limit: 50,
   keyword: '',
 })
@@ -312,7 +394,15 @@ const produceForm = reactive({
   valueEncoding: 'plain',
 })
 
-const produceHeaders = ref([{ key: '', value: '', valueEncoding: 'plain' }])
+const produceHeaders = ref([])
+
+const handledErrors = new WeakSet()
+const markErrorHandled = (error) => {
+  if (error && typeof error === 'object') {
+    handledErrors.add(error)
+  }
+  return error
+}
 
 const currentClusterName = computed(
   () => clusters.value.find((item) => item.id === form.clusterId)?.name || '-',
@@ -324,15 +414,15 @@ const partitionOptions = computed(() => {
   return Array.from({ length: count }, (_, index) => index)
 })
 
-const sendRiskHints = computed(() => {
+const currentTopicHints = computed(() => {
   const hints = []
-  const topicMeta = topics.value.find((topic) => topic.name === produceForm.topic || topic.name === form.topic)
-  const selectedTopicName = produceForm.topic || form.topic
+  const topicMeta = topics.value.find((topic) => topic.name === form.topic)
+  const selectedTopicName = form.topic
 
-  if (currentClusterName.value && /prod|生产/i.test(currentClusterName.value)) {
+  if (currentClusterName.value && /(^|[-_\s])(prod|生产)([-_\s]|$)/i.test(currentClusterName.value)) {
     hints.push({
-      title: '生产环境发送',
-      description: '当前集群名称看起来像生产环境，请确认这条消息不会触发真实业务副作用。',
+      title: '生产环境',
+      description: '当前集群名称看起来像生产环境，浏览和发送测试消息前都应确认不会影响真实业务。',
       level: 'high',
     })
   }
@@ -345,27 +435,35 @@ const sendRiskHints = computed(() => {
     })
   }
 
-  if (producePartitionMode.value === 'manual') {
+  if (result.value.warningMessage) {
     hints.push({
-      title: '指定分区发送',
-      description: `消息会被发送到分区 ${produceForm.partition}，建议确认该分区是否承载热点流量。`,
+      title: result.value.timedOut ? '结果已截断' : '浏览提醒',
+      description: result.value.warningMessage,
       level: 'warning',
     })
   }
 
-  if ((produceForm.value || '').length > 2000) {
+  if (hasQueried.value && Number(result.value.count || 0) === 0 && selectedTopicName) {
     hints.push({
-      title: '消息体较大',
-      description: `当前消息体长度约 ${(produceForm.value || '').length} 个字符，建议确认不会引入额外的传输和消费开销。`,
+      title: '暂无采样结果',
+      description: '当前条件下没有取到消息，建议确认分区、起始 Offset 或筛选关键词。',
+      level: 'warning',
+    })
+  }
+
+  if (result.value.count >= Number(form.limit || 0) && Number(form.limit || 0) > 0) {
+    hints.push({
+      title: '结果已触顶',
+      description: `当前返回 ${result.value.count} 条消息，可能还有更多结果未展示，可调整采样条数继续查看。`,
       level: 'warning',
     })
   }
 
   if (hints.length === 0) {
     hints.push({
-      title: '未识别明显高风险信号',
-      description: '当前发送目标没有识别到明显高风险特征，但仍建议确认 Topic 用途和业务影响。',
-      level: 'warning',
+      title: '当前状态',
+      description: '当前 Topic 没有识别到明显风险信号，可以继续查看消息明细。',
+      level: 'success',
     })
   }
 
@@ -400,34 +498,52 @@ const producePartitionOptions = computed(() => {
   return Array.from({ length: count }, (_, index) => index)
 })
 
-const formatTime = (value) => (value ? new Date(value).toLocaleString() : '-')
+const formatTime = formatDateTime
 
 const loadClusters = async () => {
-  const res = await getKafkaClusterOptions()
-  clusters.value = res?.data?.data || []
-  if (!form.clusterId && clusters.value.length > 0) {
-    form.clusterId = clusters.value[0].id
-  }
-  if (!produceForm.clusterId && clusters.value.length > 0) {
-    produceForm.clusterId = clusters.value[0].id
+  try {
+    await kafkaStore.loadClusterOptions()
+    if (!form.clusterId || !clusters.value.some((item) => item.id === form.clusterId)) {
+      form.clusterId = sharedClusterId.value || clusters.value[0]?.id || null
+    }
+    if (!produceForm.clusterId || !clusters.value.some((item) => item.id === produceForm.clusterId)) {
+      produceForm.clusterId = form.clusterId
+    }
+  } catch (error) {
+    ElMessage.error(error.message || 'Kafka 集群列表加载失败')
+    throw markErrorHandled(error)
   }
 }
 
 const loadTopics = async () => {
   if (!form.clusterId) return
-  const res = await getKafkaTopics({ clusterId: form.clusterId })
-  topics.value = res?.data?.data || []
-  if (!form.topic && topics.value.length > 0) {
-    form.topic = topics.value[0].name
+  try {
+    const res = await getKafkaTopics({ clusterId: form.clusterId })
+    topics.value = res?.data?.data || []
+    if (!form.topic && topics.value.length > 0) {
+      form.topic = topics.value[0].name
+    }
+  } catch (error) {
+    ElMessage.error(error.message || 'Topic 列表加载失败')
+    topics.value = []
+    form.topic = ''
+    form.partition = 0
   }
 }
 
 const loadProduceTopics = async () => {
   if (!produceForm.clusterId) return
-  const res = await getKafkaTopics({ clusterId: produceForm.clusterId })
-  produceTopics.value = res?.data?.data || []
-  if (!produceForm.topic && produceTopics.value.length > 0) {
-    produceForm.topic = produceTopics.value[0].name
+  try {
+    const res = await getKafkaTopics({ clusterId: produceForm.clusterId })
+    produceTopics.value = res?.data?.data || []
+    if (!produceForm.topic && produceTopics.value.length > 0) {
+      produceForm.topic = produceTopics.value[0].name
+    }
+  } catch (error) {
+    ElMessage.error(error.message || '发送 Topic 列表加载失败')
+    produceTopics.value = []
+    produceForm.topic = ''
+    produceForm.partition = 0
   }
 }
 
@@ -450,14 +566,21 @@ const loadRecentProduceLogs = async () => {
 }
 
 const handleClusterChange = async () => {
+  kafkaStore.setSelectedClusterId(form.clusterId)
   form.topic = ''
   form.partition = 0
+  form.offset = null
+  hasQueried.value = false
+  result.value = { count: 0, startOffset: 0, messages: [], partial: false, timedOut: false, warningMessage: '' }
   await loadTopics()
   await loadRecentProduceLogs()
 }
 
 const handleTopicChange = () => {
   form.partition = 0
+  form.offset = null
+  hasQueried.value = false
+  result.value = { count: 0, startOffset: 0, messages: [], partial: false, timedOut: false, warningMessage: '' }
 }
 
 const handleProduceClusterChange = async () => {
@@ -467,15 +590,28 @@ const handleProduceClusterChange = async () => {
 }
 
 const loadMessages = async () => {
-  if (!form.clusterId || !form.topic) return
+  if (loading.value || !form.clusterId || !form.topic) return
   if (partitionOptions.value.length === 0) return
   if (!partitionOptions.value.includes(Number(form.partition))) {
     form.partition = partitionOptions.value[0]
   }
+  const offsetValue = Number(form.offset)
+  if (form.mode === 'offset' && (form.offset === null || form.offset === undefined || Number.isNaN(offsetValue))) {
+    ElMessage.warning('请输入有效的 Offset')
+    return
+  }
+  hasQueried.value = true
   loading.value = true
   try {
-    const res = await getKafkaMessages(form)
-    result.value = res?.data?.data || result.value
+    const res = await getKafkaMessages({
+      ...form,
+      offset: form.mode === 'offset' ? offsetValue : 0,
+    })
+    const data = res?.data?.data
+    result.value = data || result.value
+    if (data?.warningMessage) {
+      ElMessage.warning(data.warningMessage)
+    }
   } catch (error) {
     ElMessage.error(error.message || '消息浏览失败')
   } finally {
@@ -491,7 +627,7 @@ const openProduceDialog = async () => {
   produceForm.keyEncoding = 'plain'
   produceForm.value = ''
   produceForm.valueEncoding = 'plain'
-  produceHeaders.value = [{ key: '', value: '', valueEncoding: 'plain' }]
+  produceHeaders.value = []
   producePartitionMode.value = 'auto'
   await loadProduceTopics()
   produceDialogVisible.value = true
@@ -516,7 +652,7 @@ const hydrateProduceForm = async ({
   produceForm.value = value
   produceForm.valueEncoding = valueEncoding
   producePartitionMode.value = partitionMode
-  produceHeaders.value = headers.length > 0 ? headers : [{ key: '', value: '', valueEncoding: 'plain' }]
+  produceHeaders.value = headers.length > 0 ? headers : []
   await loadProduceTopics()
   if (!produceTopics.value.find((item) => item.name === produceForm.topic) && produceTopics.value.length > 0) {
     produceForm.topic = produceTopics.value[0].name
@@ -526,7 +662,6 @@ const hydrateProduceForm = async ({
 const applyProduceTemplate = async (template) => {
   await hydrateProduceForm({
     ...template.payload,
-    headers: template.payload.headers,
   })
   produceDialogVisible.value = true
 }
@@ -541,7 +676,7 @@ const reuseProduceLog = async (log) => {
     clusterId: payload.clusterId || form.clusterId,
     topic: payload.topic || form.topic,
     partition: Number(payload.partition || 0),
-    key: payload.hasKey ? '' : '',
+    key: payload.key || '',
     keyEncoding: payload.keyEncoding || 'plain',
     value: '',
     valueEncoding: payload.valueEncoding || 'plain',
@@ -557,10 +692,6 @@ const addProduceHeader = () => {
 }
 
 const removeProduceHeader = (index) => {
-  if (produceHeaders.value.length === 1) {
-    produceHeaders.value[0] = { key: '', value: '', valueEncoding: 'plain' }
-    return
-  }
   produceHeaders.value.splice(index, 1)
 }
 
@@ -592,7 +723,7 @@ const handleProduceMessage = async () => {
   if (producePartitionMode.value === 'manual') {
     payload.partition = Number(produceForm.partition)
   }
-  await openKafkaRiskConfirm({
+  const confirmed = await confirmKafkaRiskAction({
     title: '发送消息确认',
     resourceName: `${currentClusterName.value} / ${produceForm.topic}`,
     actionLabel: '发送测试消息',
@@ -605,6 +736,7 @@ const handleProduceMessage = async () => {
     ],
     confirmButtonText: '确认发送',
   })
+  if (!confirmed) return
   sending.value = true
   try {
     const res = await produceKafkaMessage(payload)
@@ -640,7 +772,9 @@ onMounted(async () => {
     await loadRecentProduceLogs()
     await loadMessages()
   } catch (error) {
-    ElMessage.error(error.message || '初始化消息浏览失败')
+    if (!(error && typeof error === 'object' && handledErrors.has(error))) {
+      ElMessage.error(error.message || '初始化消息浏览失败')
+    }
   }
 })
 </script>
@@ -650,41 +784,61 @@ onMounted(async () => {
   margin-top: 14px;
 }
 
-.editor-title {
-  margin-top: 8px;
-  margin-bottom: 12px;
-  font-weight: 600;
+.produce-helper-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
-.header-editor {
-  margin-top: 12px;
-}
-
-.header-row {
-  margin-bottom: 12px;
-}
-
-.row-actions {
+.produce-helper-list {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.detail-section {
-  margin-top: 20px;
+.produce-helper-card {
+  appearance: none;
+  -webkit-appearance: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
-.section-title {
-  margin-bottom: 8px;
-  font-weight: 600;
+.produce-helper-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(var(--shell-accent-rgb, 47, 125, 246), 0.26);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
 }
 
-.detail-pre {
-  padding: 12px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  background: #0f172a;
-  border-radius: 10px;
-  color: #e2e8f0;
+.produce-helper-card strong {
+  color: var(--shell-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.produce-helper-card span {
+  color: var(--shell-text-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.table-alert {
+  margin-bottom: 16px;
+}
+
+@media (max-width: 960px) {
+  .produce-helper-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -1,33 +1,66 @@
 <template>
   <div class="page-container">
-    <div class="page-metrics">
-      <div class="page-metric-card is-success">
-        <span>状态正常</span>
-        <strong>{{ clusterStats.active }}</strong>
+    <el-card class="page-header-card" shadow="never">
+      <div class="page-header">
+        <div class="page-header-copy">
+          <div class="page-eyebrow">Kafka</div>
+          <h2>集群管理</h2>
+          <p>维护连接、认证和环境归属，先保证可连通，再处理 Topic 和消费组问题。</p>
+        </div>
+
+        <div class="page-header-side">
+          <div class="page-header-meta">
+            <div class="page-header-kpi">
+              <span>集群总数</span>
+              <strong>{{ clusterStats.total }}</strong>
+            </div>
+            <div class="page-header-kpi">
+              <span>认证 / TLS 关注项</span>
+              <strong>{{ authRiskClusterCount }}</strong>
+            </div>
+          </div>
+          <div class="page-header-actions">
+            <el-button @click="loadClusters" :loading="loading">刷新</el-button>
+            <el-button
+              v-if="permStore.hasPerm('kafka:cluster:create') || permStore.roles.includes('admin')"
+              type="primary"
+              @click="openCreateDialog"
+            >
+              新增集群
+            </el-button>
+          </div>
+        </div>
       </div>
-      <div class="page-metric-card is-warning">
-        <span>状态异常</span>
-        <strong>{{ clusterStats.error }}</strong>
+    </el-card>
+
+      <div class="page-metrics">
+        <div class="page-metric-card is-success">
+        <span>当前页正常</span>
+          <strong>{{ clusterStats.active }}</strong>
+        </div>
+        <div class="page-metric-card is-warning">
+        <span>当前页异常</span>
+          <strong>{{ clusterStats.error }}</strong>
+        </div>
+        <div class="page-metric-card">
+        <span>当前页测试失败</span>
+          <strong>{{ clusterStats.failedRecently }}</strong>
+        </div>
       </div>
-      <div class="page-metric-card">
-        <span>测试失败</span>
-        <strong>{{ clusterStats.failedRecently }}</strong>
-      </div>
-    </div>
 
     <el-card class="content-card">
       <template #header>
         <div class="card-header">
           <span>风险摘要</span>
-          <span class="card-subtitle">连接与认证</span>
+          <span class="card-subtitle">连接与认证（当前页）</span>
         </div>
       </template>
 
       <div class="compact-list">
-        <div v-if="failingClusters.length > 0" class="compact-item">
+        <div v-if="failingCluster" class="compact-item">
           <div>
             <strong>最近失败</strong>
-            <span>{{ failingClusters[0].name }} / {{ failingClusters[0].lastErrorMessage || '连接测试失败' }}</span>
+            <span>{{ failingCluster.name }} / {{ failingCluster.lastErrorMessage || '连接测试失败' }}</span>
           </div>
           <el-tag type="danger">异常</el-tag>
         </div>
@@ -63,23 +96,23 @@
             placeholder="搜索集群名称或地址"
             style="width: 280px"
             clearable
-            @keyup.enter="loadClusters"
+            @keyup.enter="handleQuery"
           />
           <el-input
             v-model="environment"
             placeholder="环境"
             style="width: 140px"
             clearable
-            @keyup.enter="loadClusters"
+            @keyup.enter="handleQuery"
           />
           <el-input
             v-model="tenant"
             placeholder="租户"
             style="width: 140px"
             clearable
-            @keyup.enter="loadClusters"
+            @keyup.enter="handleQuery"
           />
-          <el-select v-model="status" placeholder="状态" clearable style="width: 150px" @change="loadClusters">
+          <el-select v-model="status" placeholder="状态" clearable style="width: 150px" @change="handleQuery">
             <el-option label="全部" value="" />
             <el-option label="正常" value="active" />
             <el-option label="异常" value="error" />
@@ -87,14 +120,7 @@
           </el-select>
         </div>
         <div class="toolbar-right">
-          <el-button @click="loadClusters" :loading="loading">刷新</el-button>
-          <el-button
-            v-if="permStore.hasPerm('kafka:cluster:create') || permStore.roles.includes('admin')"
-            type="primary"
-            @click="openCreateDialog"
-          >
-            新增集群
-          </el-button>
+          <el-button type="primary" @click="handleQuery" :loading="loading">查询</el-button>
         </div>
       </div>
     </el-card>
@@ -148,6 +174,7 @@
               v-if="permStore.hasPerm('kafka:cluster:edit') || permStore.roles.includes('admin')"
               link
               type="primary"
+              :loading="editingId === row.id"
               @click="openEditDialog(row)"
             >
               编辑
@@ -163,10 +190,20 @@
           </template>
         </el-table-column>
       </el-table>
+      <div v-show="paginationTotal > paginationPageSize" class="table-pagination">
+        <el-pagination
+          background
+          layout="prev, pager, next, total"
+          :total="paginationTotal"
+          :page-size="paginationPageSize"
+          :current-page="paginationPage"
+          @current-change="handlePageChange"
+        />
+      </div>
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑 Kafka 集群' : '新增 Kafka 集群'" width="760px" destroy-on-close>
-      <el-form ref="formRef" :model="formData" :rules="rules" label-position="top">
+      <el-form ref="formRef" v-loading="dialogLoading" :model="formData" :rules="rules" label-position="top">
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="集群名称" prop="name">
@@ -233,16 +270,18 @@
             <el-form-item><el-checkbox v-model="formData.tlsEnabled">启用 TLS</el-checkbox></el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item><el-checkbox v-model="formData.insecureSkipVerify">跳过证书校验</el-checkbox></el-form-item>
+            <el-form-item><el-checkbox v-model="formData.insecureSkipVerify" :disabled="!formData.tlsEnabled">跳过证书校验</el-checkbox></el-form-item>
           </el-col>
         </el-row>
 
         <template v-if="formData.tlsEnabled">
           <el-form-item label="CA 证书">
             <el-input v-model="formData.caCert" type="textarea" :rows="4" placeholder="PEM 内容，可选" />
+            <div class="form-help">{{ formData.hasCACert ? '当前已配置 CA 证书，保留内容可直接保存。' : '当前未配置 CA 证书。' }}</div>
           </el-form-item>
           <el-form-item label="客户端证书">
             <el-input v-model="formData.clientCert" type="textarea" :rows="4" placeholder="PEM 内容，可选" />
+            <div class="form-help">{{ formData.hasClientCert ? '当前已配置客户端证书。' : '当前未配置客户端证书。' }}</div>
           </el-form-item>
           <el-form-item label="客户端私钥">
             <el-input
@@ -251,33 +290,40 @@
               :rows="4"
               placeholder="PEM 内容，可选，编辑时留空表示保留原值"
             />
+            <div class="form-help">{{ formData.hasClientKey ? '当前已配置客户端私钥，留空表示保留原值。' : '当前未配置客户端私钥。' }}</div>
           </el-form-item>
         </template>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button @click="handleSubmit(false)" :loading="saving">保存</el-button>
-        <el-button type="primary" @click="handleSubmit(true)" :loading="saving">保存并测试</el-button>
+        <el-button @click="dialogVisible = false" :disabled="dialogLoading">取消</el-button>
+        <el-button @click="handleSubmit(false)" :loading="saving" :disabled="dialogLoading">保存</el-button>
+        <el-button type="primary" @click="handleSubmit(true)" :loading="saving" :disabled="dialogLoading">保存并测试</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { createKafkaCluster, deleteKafkaCluster, getKafkaClusters, testKafkaCluster, updateKafkaCluster } from '@/api/kafka.js'
+import { createKafkaCluster, deleteKafkaCluster, getKafkaCluster, getKafkaClusters, testKafkaCluster, updateKafkaCluster } from '@/api/kafka.js'
 import { usePermissionStore } from '@/stores/permissionStore.js'
-import { openKafkaRiskConfirm } from '@/utils/kafkaRiskConfirm.js'
+import { formatDateTime } from '@/utils/dateTime.js'
+import { confirmKafkaRiskAction } from '@/utils/kafkaRiskConfirm.js'
 
 const permStore = usePermissionStore()
 const loading = ref(false)
 const saving = ref(false)
+const dialogLoading = ref(false)
 const testingId = ref(null)
+const editingId = ref(null)
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const formRef = ref()
 const clusters = ref([])
+const paginationPage = ref(1)
+const paginationPageSize = ref(20)
+const paginationTotal = ref(0)
 const keyword = ref('')
 const status = ref('')
 const environment = ref('')
@@ -298,31 +344,67 @@ const emptyForm = () => ({
   caCert: '',
   clientCert: '',
   clientKey: '',
+  hasCACert: false,
+  hasClientCert: false,
+  hasClientKey: false,
   description: '',
 })
 
 const formData = reactive(emptyForm())
+const bootstrapServerPattern = /^(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+):\d{1,5}$/
+const kafkaVersionPattern = /^\d+\.\d+\.\d+(?:\.\d+)?$/
 const rules = {
   name: [{ required: true, message: '请输入集群名称', trigger: 'blur' }],
-  bootstrapServers: [{ required: true, message: '请输入 Bootstrap Servers', trigger: 'blur' }],
+  bootstrapServers: [
+    { required: true, message: '请输入 Bootstrap Servers', trigger: 'blur' },
+    {
+      trigger: 'blur',
+      validator: (_rule, value, callback) => {
+        const items = String(value || '').split(',').map((item) => item.trim()).filter(Boolean)
+        if (items.length === 0) {
+          callback(new Error('请输入至少一个 host:port'))
+          return
+        }
+        if (items.some((item) => !bootstrapServerPattern.test(item))) {
+          callback(new Error('Bootstrap Servers 格式应为 host:port，多个地址用逗号分隔'))
+          return
+        }
+        callback()
+      },
+    },
+  ],
+  version: [{
+    trigger: 'blur',
+    validator: (_rule, value, callback) => {
+      const version = String(value || '').trim()
+      if (!version || kafkaVersionPattern.test(version)) {
+        callback()
+        return
+      }
+      callback(new Error('Kafka 版本格式应为 3.6.0 或 0.10.2.0'))
+    },
+  }],
 }
 
 const clusterStats = computed(() => {
-  const environments = new Set(clusters.value.map((item) => item.environment).filter(Boolean))
+  const now = Date.now()
   return {
-    total: clusters.value.length,
+    total: paginationTotal.value,
     active: clusters.value.filter((item) => item.status === 'active').length,
     error: clusters.value.filter((item) => item.status === 'error').length,
-    environments: environments.size,
-    failedRecently: clusters.value.filter((item) => item.status === 'error' && item.lastTestedAt).length,
+    failedRecently: clusters.value.filter((item) => {
+      if (item.status !== 'error' || !item.lastTestedAt) return false
+      const testedAt = new Date(item.lastTestedAt).getTime()
+      return !Number.isNaN(testedAt) && now - testedAt <= 24 * 60 * 60 * 1000
+    }).length,
   }
 })
 
-const failingClusters = computed(() =>
+const failingCluster = computed(() =>
   clusters.value
     .filter((item) => item.status === 'error')
     .sort((a, b) => new Date(b.lastTestedAt || 0) - new Date(a.lastTestedAt || 0))
-    .slice(0, 5),
+    .at(0) || null,
 )
 
 const authRiskSummary = computed(() => ({
@@ -331,59 +413,68 @@ const authRiskSummary = computed(() => ({
   insecureSkipVerifyCount: clusters.value.filter((item) => item.insecureSkipVerify).length,
 }))
 
-const authRiskClusters = computed(() =>
+const authRiskClusterCount = computed(() =>
   clusters.value
-    .map((item) => {
-      const reasons = []
-      let score = 0
-
-      if (item.authType === 'none') {
-        reasons.push('未启用认证')
-        score += 3
-      }
-      if (!item.tlsEnabled) {
-        reasons.push('未启用 TLS')
-        score += 2
-      }
-      if (item.insecureSkipVerify) {
-        reasons.push('跳过证书校验')
-        score += 2
-      }
-
-      return {
-        ...item,
-        authRiskScore: score,
-        authRiskLevel: score >= 4 ? 'high' : 'medium',
-        authRiskReason: reasons.join('；') || '当前未识别到明显认证/TLS 风险',
-      }
-    })
-    .filter((item) => item.authRiskScore > 0)
-    .sort((a, b) => b.authRiskScore - a.authRiskScore)
-    .slice(0, 5),
+    .filter((item) => item.authType === 'none' || !item.tlsEnabled || item.insecureSkipVerify)
+    .length,
 )
 
 const resetForm = () => Object.assign(formData, emptyForm())
 const statusLabel = (value) => ({ active: '正常', error: '异常', unknown: '未知' }[value] || value || '未知')
 const statusType = (value) => ({ active: 'success', error: 'danger', unknown: 'info' }[value] || 'info')
-const formatTime = (value) => (value ? new Date(value).toLocaleString() : '-')
+const formatTime = formatDateTime
+
+const buildClusterPayload = () => ({
+  name: formData.name,
+  bootstrapServers: formData.bootstrapServers,
+  version: formData.version,
+  environment: formData.environment,
+  tenant: formData.tenant,
+  authType: formData.authType,
+  username: formData.username,
+  password: formData.password,
+  tlsEnabled: formData.tlsEnabled,
+  insecureSkipVerify: formData.tlsEnabled ? formData.insecureSkipVerify : false,
+  caCert: formData.caCert,
+  clientCert: formData.clientCert,
+  clientKey: formData.clientKey,
+  description: formData.description,
+})
 
 const loadClusters = async () => {
+  if (loading.value) return
   loading.value = true
   try {
     const res = await getKafkaClusters({
-      page: 1,
-      pageSize: 100,
+      page: paginationPage.value,
+      pageSize: paginationPageSize.value,
       keyword: keyword.value,
       status: status.value,
       environment: environment.value,
       tenant: tenant.value,
     })
     clusters.value = res?.data?.data?.list || []
+    paginationTotal.value = Number(res?.data?.data?.total || 0)
+    if (paginationPage.value > 1 && clusters.value.length === 0 && paginationTotal.value > 0) {
+      paginationPage.value = 1
+      await loadClusters()
+      return
+    }
   } catch (error) {
     ElMessage.error(error.message || 'Kafka 集群列表加载失败')
   } finally {
     loading.value = false
   }
+}
+
+const handleQuery = async () => {
+  paginationPage.value = 1
+  await loadClusters()
+}
+
+const handlePageChange = async (page) => {
+  paginationPage.value = page
+  await loadClusters()
 }
 
 const openCreateDialog = () => {
@@ -392,21 +483,38 @@ const openCreateDialog = () => {
   dialogVisible.value = true
 }
 
-const openEditDialog = (row) => {
+const openEditDialog = async (row) => {
   isEdit.value = true
   resetForm()
-  Object.assign(formData, { ...row, password: '', clientKey: '' })
   dialogVisible.value = true
+  dialogLoading.value = true
+  editingId.value = row.id
+  try {
+    const res = await getKafkaCluster(row.id)
+    const detail = res?.data?.data || {}
+    Object.assign(formData, { ...row, ...detail, password: '', clientKey: '' })
+  } catch (error) {
+    dialogVisible.value = false
+    ElMessage.error(error.message || 'Kafka 集群详情加载失败')
+  } finally {
+    dialogLoading.value = false
+    editingId.value = null
+  }
 }
 
 const handleSubmit = async (testAfterSave) => {
   if (!formRef.value) return
-  await formRef.value.validate()
+  try {
+    await formRef.value.validate()
+  } catch {
+    return
+  }
   saving.value = true
   try {
     let saved
-    if (isEdit.value) saved = await updateKafkaCluster(formData.id, formData)
-    else saved = await createKafkaCluster(formData)
+    const payload = buildClusterPayload()
+    if (isEdit.value) saved = await updateKafkaCluster(formData.id, payload)
+    else saved = await createKafkaCluster(payload)
     const clusterId = saved?.data?.data?.id || formData.id
     ElMessage.success(isEdit.value ? 'Kafka 集群已更新' : 'Kafka 集群已创建')
     dialogVisible.value = false
@@ -424,7 +532,11 @@ const handleTest = async (row) => {
   try {
     const res = await testKafkaCluster(row.id)
     const result = res?.data?.data
-    ElMessage.success(`连接测试成功，Broker 数: ${result?.brokerCount ?? '-'}`)
+    if (result?.status === 'error') {
+      ElMessage.error(result?.errorMessage || '连接测试失败')
+    } else {
+      ElMessage.success(`连接测试成功，Broker 数: ${result?.brokerCount ?? '-'}`)
+    }
     await loadClusters()
   } catch (error) {
     ElMessage.error(error.message || '连接测试失败')
@@ -435,7 +547,7 @@ const handleTest = async (row) => {
 }
 
 const handleDelete = async (row) => {
-  await openKafkaRiskConfirm({
+  const confirmed = await confirmKafkaRiskAction({
     title: '删除集群确认',
     resourceName: row.name,
     actionLabel: '删除 Kafka 集群连接',
@@ -446,6 +558,7 @@ const handleDelete = async (row) => {
     ],
     confirmButtonText: '确认删除',
   })
+  if (!confirmed) return
   try {
     await deleteKafkaCluster(row.id)
     ElMessage.success('Kafka 集群已删除')
@@ -455,25 +568,39 @@ const handleDelete = async (row) => {
   }
 }
 
+watch(() => formData.tlsEnabled, (enabled) => {
+  if (!enabled) {
+    formData.insecureSkipVerify = false
+    formData.caCert = ''
+    formData.clientCert = ''
+    formData.clientKey = ''
+    formData.hasCACert = false
+    formData.hasClientCert = false
+    formData.hasClientKey = false
+  }
+})
+
+watch(() => formData.authType, (authType) => {
+  if (authType === 'none') {
+    formData.username = ''
+    formData.password = ''
+  }
+})
+
 onMounted(loadClusters)
 </script>
 
 <style scoped>
-.failure-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
-  gap: 18px;
+.form-help {
+  margin-top: 8px;
+  color: var(--shell-text-soft);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
-.failure-actions {
+.table-pagination {
   display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-@media (max-width: 1120px) {
-  .failure-grid {
-    grid-template-columns: 1fr;
-  }
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 </style>

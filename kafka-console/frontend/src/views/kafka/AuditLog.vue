@@ -1,16 +1,45 @@
 <template>
   <div class="page-container">
+    <el-card class="page-header-card" shadow="never">
+      <div class="page-header">
+        <div class="page-header-copy">
+          <div class="page-eyebrow">Kafka</div>
+          <h2>审计日志</h2>
+          <p>把高风险操作和失败记录收拢到同一视图里，优先确认删除、配置变更和 Offset 重置。</p>
+        </div>
+
+        <div class="page-header-side">
+          <div class="page-header-meta">
+            <div class="page-header-kpi">
+              <span>筛选范围</span>
+              <strong>{{ activeClusterLabel }}</strong>
+            </div>
+            <div class="page-header-kpi">
+              <span>失败记录</span>
+              <strong>{{ logStats.failed }}</strong>
+            </div>
+          </div>
+          <div class="page-header-note">
+            {{ errorClusters[0] ? `最常见失败原因：${errorClusters[0].reason}` : '最近没有明显的失败热点。' }}
+          </div>
+          <div class="page-header-actions">
+            <el-button @click="loadLogs" :loading="loading">刷新</el-button>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
     <div class="page-metrics">
       <div class="page-metric-card is-accent">
         <span>日志条数</span>
-        <strong>{{ logs.length }}</strong>
+        <strong>{{ logStats.total }}</strong>
       </div>
       <div class="page-metric-card is-success">
-        <span>成功记录</span>
+        <span>当前页成功</span>
         <strong>{{ logStats.success }}</strong>
       </div>
       <div class="page-metric-card is-warning">
-        <span>失败记录</span>
+        <span>当前页失败</span>
         <strong>{{ logStats.failed }}</strong>
       </div>
     </div>
@@ -56,8 +85,7 @@
           </el-select>
         </div>
         <div class="toolbar-right">
-          <el-button type="primary" @click="loadLogs">查询</el-button>
-          <el-button @click="loadLogs" :loading="loading">刷新</el-button>
+          <el-button type="primary" @click="handleSearch">查询</el-button>
         </div>
       </div>
     </el-card>
@@ -85,19 +113,35 @@
         </el-table-column>
         <el-table-column prop="errorMessage" label="错误信息" min-width="220" show-overflow-tooltip />
       </el-table>
+
+      <el-pagination
+        v-model:current-page="filters.page"
+        v-model:page-size="filters.pageSize"
+        class="audit-pagination"
+        :page-sizes="[20, 50, 100]"
+        :total="paginationTotal"
+        layout="total, sizes, prev, pager, next"
+        @size-change="loadLogs"
+        @current-change="loadLogs"
+      />
     </el-card>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
-import { getKafkaAuditLogs, getKafkaClusterOptions } from '@/api/kafka.js'
+import { getKafkaAuditLogs } from '@/api/kafka.js'
+import { useKafkaStore } from '@/stores/kafkaStore.js'
+import { formatDateTime } from '@/utils/dateTime.js'
 
 const loading = ref(false)
-const clusters = ref([])
 const logs = ref([])
-const filters = reactive({ clusterId: null, action: '', result: '', page: 1, pageSize: 100 })
+const paginationTotal = ref(0)
+const filters = reactive({ clusterId: null, action: '', result: '', page: 1, pageSize: 20 })
+const kafkaStore = useKafkaStore()
+const { clusterOptions: clusters } = storeToRefs(kafkaStore)
 const quickRiskActions = [
   {
     label: '删 Topic',
@@ -121,9 +165,14 @@ const quickRiskActions = [
   },
 ]
 
+const activeClusterLabel = computed(
+  () => clusters.value.find((item) => item.id === filters.clusterId)?.name || '全部集群',
+)
+
 const logStats = computed(() => {
   const clusterIds = new Set(logs.value.map((item) => item.clusterId).filter(Boolean))
   return {
+    total: paginationTotal.value,
     success: logs.value.filter((item) => item.result === 'success').length,
     failed: logs.value.filter((item) => item.result === 'failed').length,
     clusterCount: clusterIds.size,
@@ -146,29 +195,42 @@ const errorClusters = computed(() => {
     .slice(0, 5)
 })
 
-const formatTime = (value) => (value ? new Date(value).toLocaleString() : '-')
+const formatTime = formatDateTime
 
 const applyQuickActionFilter = async (action) => {
   filters.action = action
+  filters.page = 1
+  await loadLogs()
+}
+
+const handleSearch = async () => {
+  filters.page = 1
   await loadLogs()
 }
 
 const clearQuickFilters = async () => {
   filters.action = ''
   filters.result = ''
+  filters.page = 1
   await loadLogs()
 }
 
 const loadClusters = async () => {
-  const res = await getKafkaClusterOptions()
-  clusters.value = res?.data?.data || []
+  try {
+    await kafkaStore.loadClusterOptions()
+  } catch (error) {
+    ElMessage.error(error.message || 'Kafka 集群列表加载失败')
+    throw error
+  }
 }
 
 const loadLogs = async () => {
+  if (loading.value) return
   loading.value = true
   try {
     const res = await getKafkaAuditLogs(filters)
     logs.value = res?.data?.data?.list || []
+    paginationTotal.value = Number(res?.data?.data?.total || 0)
   } catch (error) {
     ElMessage.error(error.message || '审计日志加载失败')
   } finally {
@@ -177,8 +239,14 @@ const loadLogs = async () => {
 }
 
 onMounted(async () => {
-  await loadClusters()
-  await loadLogs()
+  try {
+    await loadClusters()
+    await loadLogs()
+  } catch (error) {
+    if (!String(error?.message || '').includes('Kafka 集群列表加载失败')) {
+      ElMessage.error(error.message || '审计日志初始化失败')
+    }
+  }
 })
 </script>
 
@@ -199,10 +267,14 @@ onMounted(async () => {
 }
 
 .quick-filter-btn.is-active {
-  color: #2563eb;
-  border-color: rgba(37, 99, 235, 0.4);
-  background: rgba(239, 246, 255, 0.9);
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.12);
+  color: var(--shell-accent);
+  border-color: var(--shell-accent-border-strong);
+  background: var(--shell-accent-faint);
+  box-shadow: inset 0 0 0 1px var(--shell-accent-ring);
+}
+
+.audit-pagination {
+  margin-top: 16px;
 }
 
 @media (max-width: 960px) {

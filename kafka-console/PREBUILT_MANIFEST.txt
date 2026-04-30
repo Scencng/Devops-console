@@ -1,0 +1,5 @@
+BuiltAt=20260422-214458
+Project=kafka-console
+GitCommit=
+BackendBinary=backend/devops
+FrontendDist=frontend/dist

@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"devops-console-backend/internal/dal"
@@ -22,12 +24,32 @@ import (
 	"gorm.io/gorm"
 )
 
-type Service struct {
-	repo *configs.KafkaClusterRepository
+const (
+	latestOffsetUnavailable     int64 = -1
+	consumerGroupMetricsWorkers       = 6
+	defaultKafkaVersion               = "3.6.0"
+)
+
+type latestOffsetCache struct {
+	mu       sync.Mutex
+	data     map[string]map[int32]int64
+	inflight map[string]chan struct{}
 }
 
-func NewService(repo *configs.KafkaClusterRepository) *Service {
-	return &Service{repo: repo}
+func newLatestOffsetCache() *latestOffsetCache {
+	return &latestOffsetCache{
+		data:     make(map[string]map[int32]int64),
+		inflight: make(map[string]chan struct{}),
+	}
+}
+
+type Service struct {
+	repo      *configs.KafkaClusterRepository
+	auditRepo *configs.KafkaAuditLogRepository
+}
+
+func NewService(repo *configs.KafkaClusterRepository, auditRepo *configs.KafkaAuditLogRepository) *Service {
+	return &Service{repo: repo, auditRepo: auditRepo}
 }
 
 func (s *Service) ListClusters(req reqKafka.ClusterListRequest) (*response.KafkaClusterListVO, error) {
@@ -62,12 +84,12 @@ func (s *Service) ListClusterOptions() ([]response.KafkaClusterOptionVO, error) 
 	return options, nil
 }
 
-func (s *Service) GetCluster(id uint) (*response.KafkaClusterVO, error) {
+func (s *Service) GetCluster(id uint) (*response.KafkaClusterDetailVO, error) {
 	cluster, err := s.repo.GetByID(id)
 	if err != nil {
 		return nil, err
 	}
-	vo := toClusterVO(*cluster)
+	vo := toClusterDetailVO(*cluster)
 	return &vo, nil
 }
 
@@ -120,19 +142,22 @@ func (s *Service) TestCluster(id uint) (*response.KafkaClusterTestVO, error) {
 	}
 	start := time.Now()
 	client, admin, err := s.openClients(cluster)
-	testedAt := time.Now()
 	if err != nil {
+		testedAt := time.Now()
 		_ = s.repo.UpdateTestStatus(id, dal.KafkaClusterStatusError, err.Error(), &testedAt)
 		_ = s.repo.SaveTestRecord(&dal.ConnectionTest{ResourceType: dal.KafkaResourceTypeCluster, ResourceID: id, TestResult: "failure", ErrorMessage: err.Error(), TestedAt: testedAt})
 		return &response.KafkaClusterTestVO{ClusterID: id, ClusterName: cluster.Name, ResponseTime: time.Since(start).Milliseconds(), TestedAt: testedAt, Status: dal.KafkaClusterStatusError, ErrorMessage: err.Error()}, err
 	}
-	defer admin.Close()
 	defer client.Close()
+	defer admin.Close()
 	brokers, controllerID, err := admin.DescribeCluster()
 	if err != nil {
+		testedAt := time.Now()
 		_ = s.repo.UpdateTestStatus(id, dal.KafkaClusterStatusError, err.Error(), &testedAt)
-		return nil, err
+		_ = s.repo.SaveTestRecord(&dal.ConnectionTest{ResourceType: dal.KafkaResourceTypeCluster, ResourceID: id, TestResult: "failure", ErrorMessage: err.Error(), TestedAt: testedAt})
+		return &response.KafkaClusterTestVO{ClusterID: id, ClusterName: cluster.Name, ResponseTime: time.Since(start).Milliseconds(), TestedAt: testedAt, Status: dal.KafkaClusterStatusError, ErrorMessage: err.Error()}, err
 	}
+	testedAt := time.Now()
 	responseTime := time.Since(start).Milliseconds()
 	_ = s.repo.UpdateTestStatus(id, dal.KafkaClusterStatusActive, "", &testedAt)
 	responseTimeInt := int(responseTime)
@@ -149,8 +174,12 @@ func (s *Service) ListTopics(clusterID uint, keyword string) ([]response.KafkaTo
 	if err != nil {
 		return nil, err
 	}
-	defer admin.Close()
 	defer client.Close()
+	defer admin.Close()
+	return s.listTopicsWithClients(client, admin, keyword)
+}
+
+func (s *Service) listTopicsWithClients(client sarama.Client, admin sarama.ClusterAdmin, keyword string) ([]response.KafkaTopicVO, error) {
 	topicDetails, err := admin.ListTopics()
 	if err != nil {
 		return nil, err
@@ -194,8 +223,8 @@ func (s *Service) DeleteTopic(clusterID uint, topic string) error {
 	if err != nil {
 		return err
 	}
-	defer admin.Close()
 	defer client.Close()
+	defer admin.Close()
 	return admin.DeleteTopic(topic)
 }
 
@@ -211,8 +240,8 @@ func (s *Service) UpdateTopicConfig(topic string, req reqKafka.TopicConfigUpdate
 	if err != nil {
 		return err
 	}
-	defer admin.Close()
 	defer client.Close()
+	defer admin.Close()
 	version, err := parseKafkaVersion(cluster.Version)
 	if err != nil {
 		return err
@@ -247,6 +276,49 @@ func (s *Service) UpdateTopicConfig(topic string, req reqKafka.TopicConfigUpdate
 	return admin.AlterConfig(sarama.TopicResource, topic, alterEntries, false)
 }
 
+func (s *Service) UpdateBrokerConfig(clusterID uint, brokerID int32, configs map[string]string) error {
+	if len(configs) == 0 {
+		return errors.New("至少需要提供一项 Broker 配置")
+	}
+	cluster, err := s.repo.GetByID(clusterID)
+	if err != nil {
+		return err
+	}
+	client, admin, err := s.openClients(cluster)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	defer admin.Close()
+
+	brokers, _, err := admin.DescribeCluster()
+	if err != nil {
+		return err
+	}
+	brokerExists := false
+	for _, broker := range brokers {
+		if broker != nil && broker.ID() == brokerID {
+			brokerExists = true
+			break
+		}
+	}
+	if !brokerExists {
+		return fmt.Errorf("Broker %d 不存在", brokerID)
+	}
+
+	alterEntries := make(map[string]*string, len(configs))
+	for rawKey, rawValue := range configs {
+		key := strings.TrimSpace(rawKey)
+		if key == "" {
+			return errors.New("Broker 配置项 key 不能为空")
+		}
+		value := rawValue
+		alterEntries[key] = &value
+	}
+
+	return admin.AlterConfig(sarama.BrokerResource, strconv.FormatInt(int64(brokerID), 10), alterEntries, false)
+}
+
 func (s *Service) ListBrokers(clusterID uint) ([]response.KafkaBrokerVO, error) {
 	cluster, err := s.repo.GetByID(clusterID)
 	if err != nil {
@@ -256,8 +328,12 @@ func (s *Service) ListBrokers(clusterID uint) ([]response.KafkaBrokerVO, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer admin.Close()
 	defer client.Close()
+	defer admin.Close()
+	return s.listBrokersWithClients(client, admin)
+}
+
+func (s *Service) listBrokersWithClients(client sarama.Client, admin sarama.ClusterAdmin) ([]response.KafkaBrokerVO, error) {
 	brokers, controllerID, err := admin.DescribeCluster()
 	if err != nil {
 		return nil, err
@@ -316,8 +392,12 @@ func (s *Service) ListConsumerGroups(clusterID uint, keyword string) ([]response
 	if err != nil {
 		return nil, err
 	}
-	defer admin.Close()
 	defer client.Close()
+	defer admin.Close()
+	return s.listConsumerGroupsWithClients(client, admin, keyword)
+}
+
+func (s *Service) listConsumerGroupsWithClients(client sarama.Client, admin sarama.ClusterAdmin, keyword string) ([]response.KafkaConsumerGroupVO, error) {
 	groupMap, err := admin.ListConsumerGroups()
 	if err != nil {
 		return nil, err
@@ -337,38 +417,51 @@ func (s *Service) ListConsumerGroups(clusterID uint, keyword string) ([]response
 		return nil, err
 	}
 	result := make([]response.KafkaConsumerGroupVO, 0, len(groups))
-	for _, group := range groups {
-		offsets, err := admin.ListConsumerGroupOffsets(group.GroupId, nil)
-		if err != nil {
-			return nil, err
-		}
-		topics := map[string]struct{}{}
-		partitionCount := 0
-		var totalLag int64
-		for topic, partitions := range offsets.Blocks {
-			topics[topic] = struct{}{}
-			for partitionID, block := range partitions {
-				partitionCount++
-				if block == nil || block.Offset < 0 {
-					continue
-				}
-				latest, latestErr := client.GetOffset(topic, partitionID, sarama.OffsetNewest)
-				if latestErr == nil && latest > block.Offset {
-					totalLag += latest - block.Offset
-				}
+	cache := newLatestOffsetCache()
+	workerCount := consumerGroupMetricsWorkers
+	if len(groups) < workerCount {
+		workerCount = len(groups)
+	}
+	type workerJob struct {
+		group *sarama.GroupDescription
+	}
+	type workerResult struct {
+		group response.KafkaConsumerGroupVO
+	}
+	jobs := make(chan workerJob, len(groups))
+	results := make(chan workerResult, len(groups))
+	var wg sync.WaitGroup
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			workerAdmin, workerErr := sarama.NewClusterAdminFromClient(client)
+			if workerErr == nil {
+				defer workerAdmin.Close()
 			}
-		}
-		topicList := make([]string, 0, len(topics))
-		for topic := range topics {
-			topicList = append(topicList, topic)
-		}
-		sort.Strings(topicList)
-		result = append(result, response.KafkaConsumerGroupVO{GroupID: group.GroupId, ProtocolType: group.ProtocolType, State: group.State, MemberCount: len(group.Members), Topics: topicList, PartitionCount: partitionCount, CommittedLag: totalLag})
+			for job := range jobs {
+				results <- workerResult{group: buildConsumerGroupSummary(workerAdmin, workerErr, client, job.group, cache)}
+			}
+		}()
+	}
+	for _, group := range groups {
+		jobs <- workerJob{group: group}
+	}
+	close(jobs)
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+	for item := range results {
+		result = append(result, item.group)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].GroupID < result[j].GroupID })
 	return result, nil
 }
 
+// ResetConsumerGroupOffset validates the target group and partitions first, then uses
+// sarama.NewOffsetManagerFromClient + ManagePartition + ResetOffset to overwrite the
+// committed offsets stored in Kafka for the specified consumer group.
 func (s *Service) ResetConsumerGroupOffset(groupID string, req reqKafka.ResetConsumerGroupOffsetRequest) (*response.KafkaConsumerGroupOffsetResetVO, error) {
 	if strings.TrimSpace(groupID) == "" {
 		return nil, errors.New("消费组不能为空")
@@ -381,8 +474,11 @@ func (s *Service) ResetConsumerGroupOffset(groupID string, req reqKafka.ResetCon
 	if err != nil {
 		return nil, err
 	}
-	defer admin.Close()
 	defer client.Close()
+	defer admin.Close()
+	if err = ensureConsumerGroupCanReset(admin, groupID, req.Force); err != nil {
+		return nil, err
+	}
 	partitions, err := client.Partitions(req.Topic)
 	if err != nil {
 		return nil, err
@@ -429,33 +525,41 @@ func (s *Service) ResetConsumerGroupOffset(groupID string, req reqKafka.ResetCon
 	for _, partition := range targetPartitions {
 		partitionOffsetManager, manageErr := offsetManager.ManagePartition(req.Topic, partition)
 		if manageErr != nil {
-			for _, manager := range partitionManagers {
-				_ = manager.Close()
+			if closeErr := closeOffsetManagers(partitionManagers, offsetManager); closeErr != nil {
+				return nil, fmt.Errorf("%w；资源清理失败：%v", manageErr, closeErr)
 			}
-			_ = offsetManager.Close()
 			return nil, manageErr
 		}
 		partitionOffsetManager.ResetOffset(targetOffsets[partition], fmt.Sprintf("reset by kafka-console at %s", time.Now().Format(time.RFC3339)))
 		partitionManagers = append(partitionManagers, partitionOffsetManager)
 	}
-	offsetManager.Commit()
-	for _, manager := range partitionManagers {
-		_ = manager.Close()
+	if closeErr := closeOffsetManagers(partitionManagers, offsetManager); closeErr != nil {
+		return nil, closeErr
 	}
-	_ = offsetManager.Close()
 	return &response.KafkaConsumerGroupOffsetResetVO{GroupID: groupID, Topic: req.Topic, AllPartitions: req.AllPartitions, ResetType: req.ResetType, Partitions: resultPartitions}, nil
 }
 
 func (s *Service) GetDashboard(clusterID uint) (*response.KafkaDashboardVO, error) {
-	brokers, err := s.ListBrokers(clusterID)
+	cluster, err := s.repo.GetByID(clusterID)
 	if err != nil {
 		return nil, err
 	}
-	topics, err := s.ListTopics(clusterID, "")
+	client, admin, err := s.openClients(cluster)
 	if err != nil {
 		return nil, err
 	}
-	groups, err := s.ListConsumerGroups(clusterID, "")
+	defer client.Close()
+	defer admin.Close()
+
+	brokers, err := s.listBrokersWithClients(client, admin)
+	if err != nil {
+		return nil, err
+	}
+	topics, err := s.listTopicsWithClients(client, admin, "")
+	if err != nil {
+		return nil, err
+	}
+	groups, err := s.listConsumerGroupsWithClients(client, admin, "")
 	if err != nil {
 		return nil, err
 	}
@@ -560,7 +664,12 @@ func (s *Service) buildTLSConfig(cluster *dal.KafkaCluster) (*tls.Config, error)
 		}
 		tlsConfig.RootCAs = pool
 	}
-	if strings.TrimSpace(cluster.ClientCert) != "" && strings.TrimSpace(cluster.ClientKeyCiphertext) != "" {
+	clientCert := strings.TrimSpace(cluster.ClientCert)
+	clientKeyCiphertext := strings.TrimSpace(cluster.ClientKeyCiphertext)
+	if clientCert != "" || clientKeyCiphertext != "" {
+		if clientCert == "" || clientKeyCiphertext == "" {
+			return nil, errors.New("Kafka 客户端证书和私钥必须同时配置")
+		}
 		clientKey, err := cryptoutil.DecryptString(cluster.ClientKeyCiphertext)
 		if err != nil {
 			return nil, err
@@ -587,21 +696,41 @@ func buildClusterModel(existing *dal.KafkaCluster, req reqKafka.ClusterUpsertReq
 	}
 	version := strings.TrimSpace(req.Version)
 	if version == "" {
-		version = "3.6.0"
+		version = defaultKafkaVersion
 	}
-	cluster := existing
-	if cluster == nil {
-		cluster = &dal.KafkaCluster{Status: dal.KafkaClusterStatusUnknown}
+	normalizedBootstrapServers := strings.Join(normalizeBootstrapServers(req.BootstrapServers), ",")
+	clientCert := strings.TrimSpace(req.ClientCert)
+	clientKey := strings.TrimSpace(req.ClientKey)
+	if clientKey != "" && clientCert == "" {
+		return nil, errors.New("提供客户端私钥时必须同时提供客户端证书")
+	}
+	existingClientCert := ""
+	if existing != nil {
+		existingClientCert = strings.TrimSpace(existing.ClientCert)
+	}
+	if clientKey == "" {
+		switch {
+		case clientCert == "":
+		case existing == nil:
+			return nil, errors.New("提供客户端证书时必须同时提供客户端私钥")
+		case clientCert != existingClientCert:
+			return nil, errors.New("修改客户端证书时请同时提供客户端私钥，或清空客户端证书")
+		}
+	}
+	cluster := &dal.KafkaCluster{Status: dal.KafkaClusterStatusUnknown}
+	if existing != nil {
+		copyCluster := *existing
+		cluster = &copyCluster
 	}
 	cluster.Name = strings.TrimSpace(req.Name)
-	cluster.BootstrapServers = strings.Join(normalizeBootstrapServers(req.BootstrapServers), ",")
+	cluster.BootstrapServers = normalizedBootstrapServers
 	cluster.Version = version
 	cluster.AuthType = authType
 	cluster.Username = strings.TrimSpace(req.Username)
 	cluster.TLSEnabled = req.TLSEnabled
 	cluster.InsecureSkipVerify = req.InsecureSkipVerify
-	cluster.CACert = req.CACert
-	cluster.ClientCert = req.ClientCert
+	cluster.CACert = strings.TrimSpace(req.CACert)
+	cluster.ClientCert = clientCert
 	cluster.Description = req.Description
 	cluster.Environment = strings.TrimSpace(req.Environment)
 	cluster.Tenant = strings.TrimSpace(req.Tenant)
@@ -615,13 +744,13 @@ func buildClusterModel(existing *dal.KafkaCluster, req reqKafka.ClusterUpsertReq
 		cluster.PasswordCiphertext = ""
 		cluster.Username = ""
 	}
-	if req.ClientKey != "" {
+	if clientKey != "" {
 		cipherText, err := cryptoutil.EncryptString(req.ClientKey)
 		if err != nil {
 			return nil, err
 		}
 		cluster.ClientKeyCiphertext = cipherText
-	} else if strings.TrimSpace(req.ClientCert) == "" {
+	} else if clientCert == "" {
 		cluster.ClientKeyCiphertext = ""
 	}
 	return cluster, nil
@@ -641,7 +770,7 @@ func normalizeBootstrapServers(raw string) []string {
 
 func parseKafkaVersion(version string) (sarama.KafkaVersion, error) {
 	if strings.TrimSpace(version) == "" {
-		version = "3.6.0"
+		version = defaultKafkaVersion
 	}
 	parsed, err := sarama.ParseKafkaVersion(version)
 	if err != nil {
@@ -686,6 +815,205 @@ func resolveTargetOffset(client sarama.Client, topic string, partition int32, re
 	}
 }
 
+func (c *latestOffsetCache) get(client sarama.Client, topic string, partition int32) (int64, error) {
+	cacheKey := fmt.Sprintf("%s#%d", topic, partition)
+	for {
+		c.mu.Lock()
+		if partitions, ok := c.data[topic]; ok {
+			if latest, exists := partitions[partition]; exists {
+				c.mu.Unlock()
+				if latest == latestOffsetUnavailable {
+					return 0, errors.New("latest offset unavailable")
+				}
+				return latest, nil
+			}
+		}
+		if waitCh, exists := c.inflight[cacheKey]; exists {
+			c.mu.Unlock()
+			<-waitCh
+			continue
+		}
+		waitCh := make(chan struct{})
+		c.inflight[cacheKey] = waitCh
+		c.mu.Unlock()
+
+		latest, err := client.GetOffset(topic, partition, sarama.OffsetNewest)
+
+		c.mu.Lock()
+		if c.data[topic] == nil {
+			c.data[topic] = map[int32]int64{}
+		}
+		if err != nil {
+			c.data[topic][partition] = latestOffsetUnavailable
+		} else {
+			c.data[topic][partition] = latest
+		}
+		close(c.inflight[cacheKey])
+		delete(c.inflight, cacheKey)
+		c.mu.Unlock()
+
+		if err != nil {
+			return 0, err
+		}
+		return latest, nil
+	}
+}
+
+func buildConsumerGroupSummary(admin sarama.ClusterAdmin, adminErr error, client sarama.Client, group *sarama.GroupDescription, cache *latestOffsetCache) response.KafkaConsumerGroupVO {
+	if group == nil {
+		return response.KafkaConsumerGroupVO{
+			Topics:            []string{},
+			LagAvailable:      false,
+			LagWarningMessage: "消费组描述为空，无法计算 Lag",
+		}
+	}
+	summary := response.KafkaConsumerGroupVO{
+		GroupID:      group.GroupId,
+		ProtocolType: group.ProtocolType,
+		State:        group.State,
+		MemberCount:  len(group.Members),
+		Topics:       []string{},
+		LagAvailable: true,
+	}
+	if adminErr != nil {
+		summary.LagAvailable = false
+		summary.LagWarningMessage = "Lag 查询初始化失败，当前未能获取消费组 offsets"
+		return summary
+	}
+
+	offsets, err := admin.ListConsumerGroupOffsets(group.GroupId, nil)
+	if err != nil {
+		summary.LagAvailable = false
+		summary.LagWarningMessage = fmt.Sprintf("消费组 offsets 查询失败：%s", err.Error())
+		return summary
+	}
+
+	topics := map[string]struct{}{}
+	partitionCount := 0
+	var totalLag int64
+	partialLag := false
+	offsetFailureCount := 0
+	latestFailureCount := 0
+
+	for topic, partitions := range offsets.Blocks {
+		topics[topic] = struct{}{}
+		for partitionID, block := range partitions {
+			partitionCount++
+			if block == nil {
+				partialLag = true
+				offsetFailureCount++
+				continue
+			}
+			if block.Err != sarama.ErrNoError {
+				partialLag = true
+				offsetFailureCount++
+				continue
+			}
+			if block.Offset < 0 {
+				continue
+			}
+			latest, latestErr := cache.get(client, topic, partitionID)
+			if latestErr != nil {
+				partialLag = true
+				latestFailureCount++
+				continue
+			}
+			if latest > block.Offset {
+				totalLag += latest - block.Offset
+			}
+		}
+	}
+
+	topicList := make([]string, 0, len(topics))
+	for topic := range topics {
+		topicList = append(topicList, topic)
+	}
+	sort.Strings(topicList)
+
+	summary.Topics = topicList
+	summary.PartitionCount = partitionCount
+	summary.CommittedLag = totalLag
+	summary.LagPartial = partialLag
+	if partialLag {
+		summary.LagWarningMessage = buildConsumerGroupLagWarning(offsetFailureCount, latestFailureCount)
+	}
+	return summary
+}
+
+func buildConsumerGroupLagWarning(offsetFailureCount, latestFailureCount int) string {
+	parts := make([]string, 0, 2)
+	if offsetFailureCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d 个分区 offset 查询失败", offsetFailureCount))
+	}
+	if latestFailureCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d 个分区最新 offset 查询失败", latestFailureCount))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Lag 为部分结果：" + strings.Join(parts, "，")
+}
+
+func closeOffsetManagers(partitionManagers []sarama.PartitionOffsetManager, offsetManager sarama.OffsetManager) error {
+	errorsList := make([]string, 0, len(partitionManagers)+1)
+	for _, manager := range partitionManagers {
+		if err := manager.Close(); err != nil {
+			errorsList = append(errorsList, err.Error())
+		}
+	}
+	if err := offsetManager.Close(); err != nil {
+		errorsList = append(errorsList, err.Error())
+	}
+	if len(errorsList) == 0 {
+		return nil
+	}
+	return fmt.Errorf("提交消费组 offset 后关闭管理器失败: %s", strings.Join(errorsList, "; "))
+}
+
+func ensureConsumerGroupCanReset(admin sarama.ClusterAdmin, groupID string, force bool) error {
+	groups, err := admin.DescribeConsumerGroups([]string{groupID})
+	if err != nil {
+		return err
+	}
+	if len(groups) == 0 || groups[0] == nil {
+		return errors.New("消费组不存在")
+	}
+	group := groups[0]
+	activeMembers := len(group.Members)
+	if activeMembers > 0 && !force {
+		return fmt.Errorf("消费组当前仍有 %d 个活跃成员（状态：%s），请先暂停消费者，或显式选择强制重置", activeMembers, group.State)
+	}
+	return nil
+}
+
 func toClusterVO(cluster dal.KafkaCluster) response.KafkaClusterVO {
-	return response.KafkaClusterVO{ID: cluster.ID, Name: cluster.Name, BootstrapServers: cluster.BootstrapServers, Version: cluster.Version, AuthType: cluster.AuthType, Username: cluster.Username, TLSEnabled: cluster.TLSEnabled, InsecureSkipVerify: cluster.InsecureSkipVerify, CACert: cluster.CACert, ClientCert: cluster.ClientCert, Description: cluster.Description, Environment: cluster.Environment, Tenant: cluster.Tenant, Status: cluster.Status, LastErrorMessage: cluster.LastErrorMessage, LastTestedAt: cluster.LastTestedAt, CreatedAt: cluster.CreatedAt, UpdatedAt: cluster.UpdatedAt}
+	return response.KafkaClusterVO{
+		ID:                 cluster.ID,
+		Name:               cluster.Name,
+		BootstrapServers:   cluster.BootstrapServers,
+		Version:            cluster.Version,
+		AuthType:           cluster.AuthType,
+		Username:           cluster.Username,
+		TLSEnabled:         cluster.TLSEnabled,
+		InsecureSkipVerify: cluster.InsecureSkipVerify,
+		HasCACert:          strings.TrimSpace(cluster.CACert) != "",
+		HasClientCert:      strings.TrimSpace(cluster.ClientCert) != "",
+		HasClientKey:       strings.TrimSpace(cluster.ClientKeyCiphertext) != "",
+		Description:        cluster.Description,
+		Environment:        cluster.Environment,
+		Tenant:             cluster.Tenant,
+		Status:             cluster.Status,
+		LastErrorMessage:   cluster.LastErrorMessage,
+		LastTestedAt:       cluster.LastTestedAt,
+		CreatedAt:          cluster.CreatedAt,
+		UpdatedAt:          cluster.UpdatedAt,
+	}
+}
+
+func toClusterDetailVO(cluster dal.KafkaCluster) response.KafkaClusterDetailVO {
+	return response.KafkaClusterDetailVO{
+		KafkaClusterVO: toClusterVO(cluster),
+		CACert:         cluster.CACert,
+		ClientCert:     cluster.ClientCert,
+	}
 }
