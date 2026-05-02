@@ -58,7 +58,11 @@ func main() {
 	// 初始化数据库
 	database.InitRedis()
 	defer database.CloseRedis()
-	configs.NewDB()
+	db := configs.NewDB()
+	if db == nil {
+		logs.Error(nil, "数据库初始化失败，程序退出")
+		return
+	}
 	defer configs.CloseDB()
 	// 跨域配置 todo 待迁移
 	r.Use(cors.New(cors.Config{

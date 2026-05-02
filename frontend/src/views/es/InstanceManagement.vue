@@ -242,6 +242,7 @@ const getTypeIcon = (type) => {
     filebeat: DocumentCopy,
     metricbeat: DocumentCopy,
     apm: WarningFilled,
+    kafka: DataLine,
     prometheus: DataLine
   }
   return icons[type] || Monitor
@@ -255,6 +256,7 @@ const getTypeColor = (type) => {
     filebeat: '#f44336',
     metricbeat: '#9c27b0',
     apm: '#795548',
+    kafka: '#e67e22',
     prometheus: '#e6522c'
   }
   return colors[type] || '#666'
@@ -268,6 +270,7 @@ const getTypeLabel = (type) => {
     filebeat: 'Filebeat',
     metricbeat: 'Metricbeat',
     apm: 'APM',
+    kafka: 'Kafka',
     prometheus: 'Prometheus'
   }
   return labels[type] || type
@@ -281,6 +284,7 @@ const getTypeTagType = (type) => {
     filebeat: 'danger',
     metricbeat: 'info',
     apm: 'info',
+    kafka: 'warning',
     kubernetes: 'primary',
     prometheus: 'danger'
   }

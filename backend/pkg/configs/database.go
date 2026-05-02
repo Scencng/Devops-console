@@ -15,6 +15,11 @@ var (
 )
 
 func NewDB() *gorm.DB {
+	if Config == nil {
+		log.Printf("database init failed: config not loaded")
+		return nil
+	}
+
 	databaseConfig := Config.Database.MySQL
 	var err error
 	dsn := fmt.Sprintf(
@@ -31,6 +36,7 @@ func NewDB() *gorm.DB {
 	})
 	if err != nil {
 		log.Printf("database init failed: %v", err)
+		GORMDB = nil
 		return nil
 	}
 
@@ -43,6 +49,9 @@ func NewDB() *gorm.DB {
 }
 
 func CloseDB() {
+	if GORMDB == nil {
+		return
+	}
 	sqlDB, _ := GORMDB.DB()
 	if err := sqlDB.Close(); err != nil {
 		log.Printf("database close failed: %v", err)

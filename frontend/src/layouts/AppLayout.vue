@@ -72,11 +72,6 @@
 
     <!-- 右侧主体内容 -->
     <main class="main-content">
-<!-- ... (Existing Header and Content Wrapper code remains unchanged up to script) ... -->
-<!-- However, since replace_file_content expects contiguous blocks, I have to be careful. -->
-<!-- If I am just replacing the menu area and data, I should do it in two chunks or use multi_replace. -->
-<!-- But wait, I need to replace the TEMPLATE part and the SCRIPT part. replace_file_content only does one block. -->
-<!-- I will use multi_replace_file_content. -->
       <!-- 顶部 Header -->
       <header class="top-header">
         <!-- 左侧：面包屑或当前路径标题 (可选) -->
@@ -89,72 +84,91 @@
                 @visible-change="handleDropdownVisible"
               >
                 <div class="instance-dropdown-trigger">
-                  <div class="trigger-icon-box" :style="{ background: getTypeColor(getSelectedInstanceType()) + '20' }">
-                     <el-icon :color="getTypeColor(getSelectedInstanceType())">
-                        <component :is="getTypeIcon(getSelectedInstanceType())" />
+                  <div class="trigger-icon-box" :style="{ background: getTypeColor(currentSelectorType) + '20' }">
+                     <el-icon :color="getTypeColor(currentSelectorType)">
+                        <component :is="getTypeIcon(currentSelectorType)" />
                       </el-icon>
                   </div>
-                  <div class="trigger-info">
-                    <span class="trigger-label">当前实例</span>
-                    <span class="trigger-value">{{ selectedInstanceName || '选择实例' }}</span>
-                  </div>
-                  <el-icon class="dropdown-arrow"><ArrowDown /></el-icon>
-                </div>
-                <!-- 保持原有的 Dropdown Menu 内容不变 -->
-                <template #dropdown>
-                  <el-dropdown-menu class="instance-management-menu">
-                    <!-- ... 实例管理下拉内容保持不变，复用原有逻辑 ... -->
-                    <div class="instance-management-content">
-                      <div class="page-header">
-                        <h2>实例管理</h2>
+                        <div class="trigger-info">
+                    <span class="trigger-label">{{ selectorLabel }}</span>
+                    <span class="trigger-value">{{ selectedInstanceName || selectorPlaceholder }}</span>
+                   </div>
+                   <el-icon class="dropdown-arrow"><ArrowDown /></el-icon>
+                 </div>
+                 <!-- 保持原有的 Dropdown Menu 内容不变 -->
+                 <template #dropdown>
+                   <el-dropdown-menu class="instance-management-menu">
+                     <div class="instance-management-content">
+                       <div class="page-header">
+                        <h2>{{ selectorPanelTitle }}</h2>
                         <div class="header-actions">
-                          <el-button size="small" @click="$router.push('/es/instances')">
-                             <el-icon><List /></el-icon>自发现列表
-                          </el-button>
-                          <el-button type="primary" size="small" @click="handleAddInstance">
-                            <el-icon><Plus /></el-icon>添加实例
-                          </el-button>
-                          <el-button size="small" @click="handleRefreshInstances">
-                            <el-icon><Refresh /></el-icon>刷新
-                          </el-button>
+                          <template v-if="isKafkaRoute">
+                            <el-button size="small" @click="$router.push('/kafka/clusters')">
+                              <el-icon><List /></el-icon>集群管理
+                            </el-button>
+                            <el-button size="small" @click="$router.push('/kafka/discovery')">
+                              <el-icon><Search /></el-icon>自动发现
+                            </el-button>
+                            <el-button size="small" @click="handleRefreshInstances">
+                              <el-icon><Refresh /></el-icon>刷新
+                            </el-button>
+                          </template>
+                          <template v-else>
+                            <el-button size="small" @click="$router.push('/es/instances')">
+                               <el-icon><List /></el-icon>自发现列表
+                            </el-button>
+                            <el-button type="primary" size="small" @click="handleAddInstance">
+                              <el-icon><Plus /></el-icon>添加实例
+                            </el-button>
+                            <el-button size="small" @click="handleRefreshInstances">
+                              <el-icon><Refresh /></el-icon>刷新
+                            </el-button>
+                          </template>
                         </div>
-                      </div>
-
-                      <div class="filter-section">
-                        <el-input v-model="searchQuery" placeholder="搜索实例..." size="small" clearable>
+                       </div>
+ 
+                       <div class="filter-section">
+                        <el-input v-model="searchQuery" :placeholder="isKafkaRoute ? '搜索 Kafka 集群...' : '搜索实例...'" size="small" clearable>
                            <template #prefix><el-icon><Search /></el-icon></template>
                         </el-input>
-                        <el-select v-model="typeFilter" placeholder="类型" size="small" clearable>
+                        <el-select v-if="!isKafkaRoute" v-model="typeFilter" placeholder="类型" size="small" clearable>
                            <el-option v-for="t in instanceTypes" :key="t.id" :label="t.type_name" :value="t.type_name" />
                         </el-select>
                          <el-select v-model="statusFilter" placeholder="状态" size="small" clearable>
+                          <template v-if="isKafkaRoute">
+                            <el-option label="正常" value="active" />
+                            <el-option label="异常" value="error" />
+                            <el-option label="未知" value="unknown" />
+                          </template>
+                          <template v-else>
                           <el-option label="活跃(旧)" value="active" />
                           <el-option label="在线" value="online" />
                           <el-option label="离线" value="offline" />
                           <el-option label="非活跃" value="inactive" />
                           <el-option label="错误" value="error" />
+                          </template>
                         </el-select>
                       </div>
-
+ 
                       <div class="instance-list-container">
                         <div
-                          v-for="instance in filteredInstanceList"
-                          :key="instance.id"
+                          v-for="entry in currentSelectionList"
+                          :key="entry.id"
                           class="instance-row"
-                          :class="{ 'selected': selectedInstance === instance.id }"
-                          @click="selectInstance(instance.id)"
+                          :class="{ 'selected': currentSelectionId === entry.id }"
+                          @click="selectInstance(entry.id)"
                         >
                            <div class="instance-info">
-                              <el-icon class="type-icon" :color="getTypeColor(instance.instance_type)">
-                                <component :is="getTypeIcon(instance.instance_type)" />
+                              <el-icon class="type-icon" :color="getEntryColor(entry)">
+                                <component :is="getEntryIcon(entry)" />
                               </el-icon>
                               <div class="instance-details">
-                                <div class="instance-name">{{ instance.name }}</div>
-                                <div class="instance-address">{{ instance.address }}</div>
+                                <div class="instance-name">{{ entry.name }}</div>
+                                <div class="instance-address">{{ getEntrySubtitle(entry) }}</div>
                               </div>
                            </div>
                            <div class="instance-actions">
-                               <el-tag :type="getStatusType(instance.status)" size="small" effect="plain">{{ getStatusLabel(instance.status) }}</el-tag>
+                               <el-tag :type="getEntryStatusType(entry)" size="small" effect="plain">{{ getEntryStatusLabel(entry) }}</el-tag>
                            </div>
                         </div>
                       </div>
@@ -217,10 +231,12 @@
 
 <script setup>
 import {computed, onMounted, ref, watch} from 'vue'
+import {storeToRefs} from 'pinia'
 import {useRoute, useRouter} from 'vue-router'
 import {ElMessage} from 'element-plus'
 import {getInstanceList, getInstanceTypes} from '@/api/instance.js'
 import {getSelectedInstanceType, setSelectedInstance} from '@/stores/instanceStore.js'
+import {useKafkaStore} from '@/stores/kafkaStore.js'
 import {usePermissionStore} from '@/stores/permissionStore.js'
 import {
   ArrowDown,
@@ -246,6 +262,8 @@ import {
 const route = useRoute()
 const router = useRouter()
 const permStore = usePermissionStore()
+const kafkaStore = useKafkaStore()
+const { clusterOptions, selectedClusterId } = storeToRefs(kafkaStore)
 
 // 状态
 const isDark = ref(false)
@@ -256,6 +274,7 @@ const instanceTypes = ref([])
 const searchQuery = ref('')
 const typeFilter = ref('')
 const statusFilter = ref('')
+const isKafkaRoute = computed(() => route.path === '/kafka' || route.path.startsWith('/kafka/'))
 
 // ======================================================
 // 动态菜单：直接使用 permissionStore 中的 menuTree
@@ -269,10 +288,33 @@ const allMenuRoutes = computed(() => [])
 
 // 计算选中实例名称
 const selectedInstanceName = computed(() => {
+  if (isKafkaRoute.value) {
+    return clusterOptions.value.find((item) => item.id === selectedClusterId.value)?.name || ''
+  }
   if (!selectedInstance.value) return ''
   const instance = instanceList.value.find(item => item.id === selectedInstance.value)
   return instance ? instance.name : ''
 })
+
+const selectorLabel = computed(() => (isKafkaRoute.value ? '当前 Kafka 集群' : '当前实例'))
+const selectorPlaceholder = computed(() => (isKafkaRoute.value ? '选择 Kafka 集群' : '选择实例'))
+const selectorPanelTitle = computed(() => (isKafkaRoute.value ? 'Kafka 集群' : '实例管理'))
+const currentSelectorType = computed(() => (isKafkaRoute.value ? 'kafka' : getSelectedInstanceType()))
+const currentSelectionId = computed(() => (isKafkaRoute.value ? selectedClusterId.value : selectedInstance.value))
+
+const filteredKafkaClusterList = computed(() => {
+  let result = [...clusterOptions.value]
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase()
+    result = result.filter((cluster) => cluster.name.toLowerCase().includes(query))
+  }
+  if (statusFilter.value) {
+    result = result.filter((cluster) => cluster.status === statusFilter.value)
+  }
+  return result
+})
+
+const currentSelectionList = computed(() => (isKafkaRoute.value ? filteredKafkaClusterList.value : filteredInstanceList.value))
 
 // 过滤实例列表
 const filteredInstanceList = computed(() => {
@@ -330,6 +372,14 @@ const handleUserCommand = (command) => {
 
 // 实例管理相关
 const selectInstance = (instanceId) => {
+  if (isKafkaRoute.value) {
+    kafkaStore.setSelectedClusterId(instanceId)
+    const cluster = clusterOptions.value.find((item) => item.id === instanceId)
+    if (cluster) {
+      ElMessage.success(`已切换到 Kafka 集群: ${cluster.name}`)
+    }
+    return
+  }
   selectedInstance.value = instanceId
   const instance = instanceList.value.find(item => item.id === instanceId)
   if (instance) {
@@ -340,16 +390,29 @@ const selectInstance = (instanceId) => {
 }
 
 const handleAddInstance = () => {
+  if (isKafkaRoute.value) {
+    router.push('/kafka/clusters')
+    return
+  }
   router.push('/es/instances/add')
 }
 
 const handleRefreshInstances = async () => {
+  if (isKafkaRoute.value) {
+    await kafkaStore.loadClusterOptions({ force: true })
+    ElMessage.success('Kafka 集群已刷新')
+    return
+  }
   await Promise.all([fetchInstances(), fetchInstanceTypes()])
   ElMessage.success('数据已刷新')
 }
 
 const handleDropdownVisible = (visible) => {
   if (visible) {
+    if (isKafkaRoute.value) {
+      kafkaStore.loadClusterOptions({ force: true })
+      return
+    }
     Promise.all([fetchInstances(), fetchInstanceTypes()])
   }
 }
@@ -393,7 +456,7 @@ const fetchInstanceTypes = async () => {
 const getTypeIcon = (type) => {
   const icons = {
     elasticsearch: Monitor, kubernetes: Box, kibana: DataLine,
-    logstash: DocumentCopy, filebeat: DocumentCopy, metricbeat: DocumentCopy, apm: WarningFilled
+    logstash: DocumentCopy, filebeat: DocumentCopy, metricbeat: DocumentCopy, apm: WarningFilled, kafka: DataLine
   }
   return icons[type] || Monitor
 }
@@ -401,13 +464,20 @@ const getTypeIcon = (type) => {
 const getTypeColor = (type) => {
   const colors = {
     elasticsearch: '#005FD4', kubernetes: '#326CE5', kibana: '#00BFB3',
-    logstash: '#FEC514', filebeat: '#00BFB3', metricbeat: '#00BFB3', apm: '#8A0A4A'
+    logstash: '#FEC514', filebeat: '#00BFB3', metricbeat: '#00BFB3', apm: '#8A0A4A', kafka: '#e67e22'
   }
   return colors[type] || '#666'
 }
 
 const getStatusType = (status) => ({ active: 'success', online: 'success', offline: 'danger', inactive: 'info', error: 'danger' }[status] || 'info')
 const getStatusLabel = (status) => ({ active: '在线', online: '在线', offline: '离线', inactive: '非活跃', error: '异常' }[status] || status)
+const getKafkaStatusType = (status) => ({ active: 'success', error: 'danger', unknown: 'info' }[status] || 'info')
+const getKafkaStatusLabel = (status) => ({ active: '正常', error: '异常', unknown: '未知' }[status] || status || '未知')
+const getEntryIcon = (entry) => getTypeIcon(isKafkaRoute.value ? 'kafka' : entry.instance_type)
+const getEntryColor = (entry) => getTypeColor(isKafkaRoute.value ? 'kafka' : entry.instance_type)
+const getEntrySubtitle = (entry) => (isKafkaRoute.value ? 'Kafka 集群' : entry.address)
+const getEntryStatusType = (entry) => (isKafkaRoute.value ? getKafkaStatusType(entry.status) : getStatusType(entry.status))
+const getEntryStatusLabel = (entry) => (isKafkaRoute.value ? getKafkaStatusLabel(entry.status) : getStatusLabel(entry.status))
 
 onMounted(() => {
   const savedTheme = localStorage.getItem('theme')
@@ -415,11 +485,33 @@ onMounted(() => {
     isDark.value = true
     document.documentElement.classList.add('dark')
   }
+  if (route.path === '/kafka') {
+    router.replace('/kafka/clusters')
+  }
   fetchInstances()
   fetchInstanceTypes()
+  if (isKafkaRoute.value) {
+    kafkaStore.loadClusterOptions().catch(() => {})
+  }
 })
 
 // Watchers
+watch(
+  () => route.path,
+  (path) => {
+    if (path === '/kafka') {
+      router.replace('/kafka/clusters')
+      return
+    }
+    searchQuery.value = ''
+    statusFilter.value = ''
+    typeFilter.value = ''
+    if (path.startsWith('/kafka/')) {
+      kafkaStore.loadClusterOptions().catch(() => {})
+    }
+  },
+)
+
 watch(() => getSelectedInstanceType(), () => {
   // Instance Type change might trigger menu refresh automatically via computed
 })

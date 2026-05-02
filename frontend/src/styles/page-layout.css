@@ -17,13 +17,23 @@
 
     --radius-md: 8px;
     --radius-lg: 12px;
+
+    /* Kafka 页面局部样式依赖的共享变量 */
+    --shell-text: var(--text-main);
+    --shell-text-soft: #64748b;
+    --shell-accent: var(--primary-color);
+    --shell-accent-rgb: 64, 158, 255;
+    --shell-accent-faint: rgba(64, 158, 255, 0.08);
+    --shell-accent-ring: rgba(64, 158, 255, 0.18);
+    --shell-accent-border-strong: rgba(64, 158, 255, 0.28);
 }
 
 /* Page Container */
 .page-container {
     padding: 20px;
     background-color: var(--bg-app);
-    min-height: 100vh;
+    min-height: 100%;
+    width: 100%;
     box-sizing: border-box;
 }
 
@@ -44,7 +54,110 @@
 .page-header {
     display: flex;
     justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.page-header-copy {
+    flex: 1 1 420px;
+    min-width: 0;
+}
+
+.page-eyebrow {
+    display: inline-flex;
     align-items: center;
+    min-height: 24px;
+    padding: 0 10px;
+    margin-bottom: 12px;
+    border-radius: 999px;
+    background: rgba(64, 158, 255, 0.08);
+    color: var(--primary-color);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.page-header-copy h2 {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--text-main);
+}
+
+.page-header-copy p {
+    margin: 10px 0 0;
+    max-width: 720px;
+    color: var(--text-sub);
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+.page-header-side {
+    display: flex;
+    flex: 0 1 360px;
+    width: 100%;
+    max-width: 360px;
+    min-width: min(100%, 280px);
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 14px;
+}
+
+.page-container .page-header-meta {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.page-container .page-header-kpi {
+    display: block;
+    flex: 1 1 136px;
+    min-width: 136px;
+    padding: 12px 14px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.94) 0%, rgba(255, 255, 255, 0.98) 100%);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+    text-align: left;
+}
+
+.page-container .page-header-kpi span {
+    display: block !important;
+    color: var(--shell-text-soft, var(--text-sub));
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1.4;
+}
+
+.page-container .page-header-kpi strong {
+    display: block !important;
+    margin-top: 6px;
+    color: var(--text-main);
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+}
+
+.page-header-note {
+    width: 100%;
+    color: var(--text-sub);
+    font-size: 13px;
+    line-height: 1.7;
+    text-align: right;
+}
+
+.page-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 12px;
 }
 
 .header-left {
@@ -77,6 +190,10 @@
     overflow: hidden;
 }
 
+.content-card .el-card__body {
+    padding: 20px;
+}
+
 .content-card .el-card__header {
     padding: 16px 20px;
     border-bottom: 1px solid var(--border-color);
@@ -86,6 +203,97 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+}
+
+.filter-card .el-card__body {
+    padding: 18px 20px;
+}
+
+.toolbar-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.toolbar-left,
+.toolbar-right {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.page-container .page-metrics {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+    align-items: stretch;
+}
+
+.page-container .page-metric-card {
+    display: flex !important;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 132px;
+    padding: 18px 20px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 22px;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(255, 255, 255, 1) 100%);
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
+}
+
+.page-container .page-metric-card span {
+    display: block !important;
+    color: var(--shell-text-soft, var(--text-sub));
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1.5;
+}
+
+.page-container .page-metric-card strong {
+    display: block !important;
+    color: var(--text-main);
+    font-size: 30px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.04em;
+}
+
+.page-container .page-metric-card p {
+    margin: auto 0 0;
+    color: var(--shell-text-soft, var(--text-sub));
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.page-container .page-metric-card.is-accent {
+    border-color: rgba(64, 158, 255, 0.26);
+    background: linear-gradient(180deg, rgba(236, 245, 255, 0.98) 0%, rgba(255, 255, 255, 1) 100%);
+}
+
+.page-container .page-metric-card.is-success {
+    border-color: rgba(103, 194, 58, 0.26);
+    background: linear-gradient(180deg, rgba(245, 250, 239, 0.98) 0%, rgba(255, 255, 255, 1) 100%);
+}
+
+.page-container .page-metric-card.is-warning {
+    border-color: rgba(230, 162, 60, 0.26);
+    background: linear-gradient(180deg, rgba(254, 248, 240, 0.98) 0%, rgba(255, 255, 255, 1) 100%);
+}
+
+.page-container .page-metric-card.is-danger {
+    border-color: rgba(245, 108, 108, 0.26);
+    background: linear-gradient(180deg, rgba(254, 242, 242, 0.98) 0%, rgba(255, 255, 255, 1) 100%);
+}
+
+.metric-skeleton {
+    display: flex;
+    flex-direction: column;
 }
 
 /* Stat Cards */
@@ -176,6 +384,68 @@
     font-weight: 600;
 }
 
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+}
+
+.card-header-wrap {
+    flex-wrap: wrap;
+}
+
+.card-subtitle {
+    color: var(--text-sub);
+    font-size: 13px;
+    font-weight: 400;
+}
+
+.compact-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.compact-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 18px;
+    border: 1px solid rgba(226, 232, 240, 0.86);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(248, 250, 252, 0.96) 100%);
+}
+
+.compact-item > div:first-child {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.compact-item strong {
+    color: var(--text-main);
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.compact-item span {
+    color: var(--text-sub);
+    font-size: 12px;
+    line-height: 1.6;
+    word-break: break-word;
+}
+
+.table-pagination {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 16px;
+}
+
 /* Utilities */
 .flex-between {
     display: flex;
@@ -189,4 +459,64 @@
 
 .mb-20 {
     margin-bottom: 20px;
+}
+
+@media (max-width: 960px) {
+    .page-container {
+        padding: 16px;
+    }
+
+    .page-header-copy h2 {
+        font-size: 24px;
+    }
+
+    .page-header-side,
+    .page-header-meta,
+    .page-header-actions {
+        width: 100%;
+        align-items: flex-start;
+        justify-content: flex-start;
+    }
+
+    .page-header-note {
+        text-align: left;
+    }
+
+    .toolbar-row,
+    .toolbar-left,
+    .toolbar-right,
+    .card-header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .page-metrics {
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
+
+    .compact-item {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .table-pagination {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 640px) {
+    .page-container {
+        padding: 12px;
+    }
+
+    .page-header-card .el-card__body,
+    .content-card .el-card__body,
+    .content-card .el-card__header {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .page-metrics {
+        grid-template-columns: 1fr;
+    }
 }

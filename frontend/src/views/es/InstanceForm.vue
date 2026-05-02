@@ -242,6 +242,7 @@ const typeDisplayConfig = {
     'kibana': { icon: markRaw(DataLine), color: '#005571', defaultPort: 5601 },
     'logstash': { icon: markRaw(DocumentCopy), color: '#005571', defaultPort: 9600 },
     'kubernetes': { icon: markRaw(Box), color: '#326CE5', defaultPort: 6443 },
+    'kafka': { icon: markRaw(DataLine), color: '#e67e22', defaultPort: 9092 },
     'prometheus': { icon: markRaw(DataLine), color: '#e6a23c', defaultPort: 9090 },
     'filebeat': { icon: markRaw(DocumentCopy), color: '#005571', defaultPort: 5066 },
     'metricbeat': { icon: markRaw(DocumentCopy), color: '#005571', defaultPort: 5067 },

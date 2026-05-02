@@ -24,6 +24,11 @@ var EsClients = make(map[uint]*elasticsearch.Client)
 
 // InitEsClients 初始化 es 客户端
 func InitEsClients() {
+	if GORMDB == nil {
+		logs.Warning(nil, "数据库未初始化，跳过 Elasticsearch 客户端初始化")
+		return
+	}
+
 	// 使用GORM查询实例详情视图
 	instanceDetails, err := getElasticsearchInstances()
 	if err != nil {

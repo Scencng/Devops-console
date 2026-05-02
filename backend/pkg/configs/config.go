@@ -344,4 +344,7 @@ func InitConfig() {
 	if err := Initialize(); err != nil {
 		panic(err)
 	}
+	if err := AutoMigrateCustomTables(); err != nil {
+		panic(err)
+	}
 }
