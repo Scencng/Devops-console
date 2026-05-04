@@ -5,3 +5,11 @@ backend/*.log
 backend/data/*.db
 frontend/node_modules/
 frontend/dist/
+.playwright-cli/
+.runtime/
+output/
+test-results/
+**/.codex/
+mysql-console/_push_mysql_v2/
+**/node_modules/
+**/dist/

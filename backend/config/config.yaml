@@ -3,7 +3,7 @@
 
 # 服务配置
 server:
-  port: ":18081"
+  port: ":8081"
   log_level: "info"  # debug, info, warn, error
 
 # 数据库配置
@@ -23,10 +23,10 @@ database:
     #    username: "root"  # Docker环境中的用户
     #    password: "peppa-pig"  # Docker环境中的密码
     #    database: "devops_console"
-    host: "127.0.0.1"  # Docker容器中的服务名
-    port: 3306
-    username: "devops"  # WSL本机可用数据库用户
-    password: "devops123456"  # WSL本机数据库密码
+    host: "47.104.247.159"  # 远端开发库
+    port: 8002
+    username: "root"
+    password: "peppa-pig"
     database: "devops_console"
     charset: "utf8mb4"
     parse_time: true
@@ -60,7 +60,7 @@ kubernetes:
 # Swagger配置
 swagger:
   enabled: true
-  host: "localhost:18081"
+  host: "localhost:8081"
   base_path: "/"
 
 # 健康检查配置
@@ -70,9 +70,9 @@ health:
   interval: 30  # 检查间隔（秒）
 
 redis:
-  host: 127.0.0.1
-  port: 6379
-  password: ""
+  host: 47.104.247.159
+  port: 8001
+  password: "peppa-pig"
   db: 0
 ai:
   mcp:

@@ -1,0 +1,28 @@
+{
+  "name": "mydeploy-web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm exec -- vue-tsc --noEmit && vite build",
+    "build:lean": "npm run clean && npm exec -- vue-tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "axios": "^1.11.0",
+    "element-plus": "^2.11.1",
+    "pinia": "^3.0.3",
+    "vue": "^3.5.17",
+    "vue-router": "^4.5.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.4",
+    "vue-tsc": "^2.2.12"
+  }
+}

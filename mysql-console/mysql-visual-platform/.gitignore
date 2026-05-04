@@ -1,0 +1,29 @@
+_push_repo/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Frontend
+frontend/node_modules/
+frontend/node_modules/.vite/
+frontend/node_modules/.vite-temp/
+frontend/dist/
+.playwright-cli/
+output/
+
+# Backend build outputs
+backend/*.exe
+backend/*.exe~
+backend/mysql-visual-platform
+backend/*-linux
+backend/*.log
+backend/*.pid
+backend/storage/backups/*
+!backend/storage/backups/.gitkeep

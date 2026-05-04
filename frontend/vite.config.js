@@ -19,7 +19,7 @@ export default defineConfig({
       },
       '/ws': {
         // target: 'http://172.20.0.3:8081',
-        target: 'http://svc-backend:8081',
+        target: 'http://127.0.0.1:8081',
         changeOrigin: true,
         ws: true
       }

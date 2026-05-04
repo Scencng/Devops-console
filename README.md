@@ -1,18 +1,17 @@
 # DevOps Console
 
-This repository contains the K8s/DevOps management platform extracted from the `支付平台` workspace.
+This repository contains the complete DevOps platform project, including the main backend and frontend, the Kafka console subproject, and the integrated MySQL management project sources.
 
-Project layout:
+## Project layout
 
-- `backend/`: Go backend services
-- `frontend/`: Vue frontend application
+- `backend/`: Go backend services for the main DevOps platform
+- `frontend/`: Vue frontend application for the main DevOps platform
+- `kafka-console/`: standalone Kafka console project
+- `mysql-console/`: MySQL visual management project source
+- `README.md`: repository overview
+- `.gitignore`: repository ignore rules
 
-Excluded from this repository:
+## Notes
 
-- standalone billing frontend
-- billing-center frontend entrypoints
-- backend account/fund/verification modules
-
-Additional branch:
-
-- `kafka`: contains a Kafka management console subproject under `kafka-console/`
+- The MySQL module has been integrated into the main DevOps platform under `frontend/src/mysql/` and related backend MySQL routes and services
+- Local runtime artifacts such as build output, browser automation output, and dependency directories are excluded from version control

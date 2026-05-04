@@ -20,14 +20,14 @@ func (e *ElacsticsearchProber) Probe(ctx context.Context, instance dal.Instance)
 	}
 	client, exist := configs.GetEsClient(instance.ID)
 	if !exist {
-		logs.Error(map[string]interface{}{"instance_id": instance.ID}, "ES 集群客户端不存在")
+        logs.Warning(map[string]interface{}{"instance_id": instance.ID}, "ES client missing, skip health probe")
 		return StatusOffline
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	health, err := client.Cluster.Health(client.Cluster.Health.WithContext(ctx))
 	if err != nil {
-		logs.Error(map[string]interface{}{"instanceId": instance.ID, "错误原因：": err.Error()}, "ES 集群状态异常")
+        logs.Warning(map[string]interface{}{"instanceId": instance.ID, "error": err.Error()}, "ES cluster health probe failed")
 		return StatusOffline
 	}
 	if health.StatusCode != 200 {

@@ -422,15 +422,24 @@ func GetTodayTestStats(r *gin.Context) {
 	}
 
 	totalTests := stats["total_tests"].(int64)
-	instanceTests := stats["instance_tests"].([]struct {
-		InstanceID uint   `json:"instance_id"`
+	var instanceTests []struct {
+		InstanceID int    `json:"instance_id"`
 		Name       string `json:"name"`
 		Count      int64  `json:"count"`
-	})
+	}
+	rawInstanceTests, err := json.Marshal(stats["instance_tests"])
+	if err != nil {
+		helper.InternalError("今日测试统计数据序列化失败")
+		return
+	}
+	if err := json.Unmarshal(rawInstanceTests, &instanceTests); err != nil {
+		helper.InternalError("今日测试统计数据格式错误")
+		return
+	}
 
 	instanceTestCounts := make(map[string]int64)
 	for _, instanceTest := range instanceTests {
-		instanceTestCounts[strconv.FormatInt(int64(instanceTest.InstanceID), 10)] = instanceTest.Count
+		instanceTestCounts[strconv.Itoa(instanceTest.InstanceID)] = instanceTest.Count
 	}
 
 	logs.Debug(map[string]interface{}{

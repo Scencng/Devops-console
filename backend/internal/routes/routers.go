@@ -1,4 +1,4 @@
-// 路由层 管理程序的路由信息
+// 璺敱灞?绠＄悊绋嬪簭鐨勮矾鐢变俊鎭?
 package routers
 
 import (
@@ -11,9 +11,10 @@ import (
 	"devops-console-backend/internal/routes/es/node"
 	"devops-console-backend/internal/routes/es/shard"
 	"devops-console-backend/internal/routes/helm"
-	"devops-console-backend/internal/routes/kafka"
 	"devops-console-backend/internal/routes/k8s"
+	"devops-console-backend/internal/routes/kafka"
 	"devops-console-backend/internal/routes/monitor"
+	"devops-console-backend/internal/routes/mysql"
 	"devops-console-backend/internal/routes/system"
 	"devops-console-backend/internal/routes/task_scheduler"
 
@@ -21,9 +22,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// RegisterRouters 注册路由的方法
+// RegisterRouters 娉ㄥ唽璺敱鐨勬柟娉?
 func RegisterRouters(r *gin.Engine, db *gorm.DB) {
-	// 路由配置
 	apiGroup := r.Group("/api/v1")
 	{
 		elasticsearch.RegisterSubRouter(apiGroup)
@@ -32,24 +32,18 @@ func RegisterRouters(r *gin.Engine, db *gorm.DB) {
 		node.RegisterSubRouter(apiGroup)
 		shard.RegisterSubRouter(apiGroup)
 		indices.RegisterSubRouter(apiGroup)
-		// 注册K8s模块路由
+
 		k8s.RegisterK8sRoutes(apiGroup, db)
-		// 注册Helm模块路由
+
 		helmRoute := helm.NewHelmRoute(db)
 		helmRoute.RegisterSubRouter(apiGroup)
+
 		system.RegisterSystemRouters(apiGroup)
 		kafka.RegisterKafkaRouters(apiGroup)
-
-		// 注册监控(Prometheus等)模块路由
+		mysql.RegisterMySQLRouters(apiGroup)
 		monitor.RegisterMonitorRouters(apiGroup, db)
-
-		// 注册资产管理模块路由
 		asset.RegisterAssetRouters(apiGroup, db)
-
-		// CiCd 模块
 		cicd.RegisterCiCdRouters(apiGroup)
-
-		// 任务调度模块
 		task_scheduler.RegisterTaskSchedulerRouters(apiGroup, db)
 	}
 }

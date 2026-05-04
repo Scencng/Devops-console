@@ -1,7 +1,7 @@
-// 项目的总入口
+﻿// 椤圭洰鐨勬€诲叆鍙?
 // @title DevOps Console API
 // @version 1.0
-// @description DevOps Console后端API文档
+// @description DevOps Console鍚庣API鏂囨。
 // @termsOfService http://swagger.io/terms/
 
 // @contact.name API Support
@@ -24,6 +24,7 @@ import (
 	"devops-console-backend/internal/common"
 	"devops-console-backend/internal/controllers/monitor"
 	"devops-console-backend/internal/dal/model"
+	mysqlbootstrap "devops-console-backend/internal/mysql/bootstrap"
 	"devops-console-backend/internal/middlewares"
 	"devops-console-backend/internal/routes"
 	"devops-console-backend/internal/services/probe"
@@ -45,46 +46,50 @@ import (
 )
 
 func main() {
-	// 1. 加载程序的配置
-	// 2. 配置gin
+	// 1. 鍔犺浇绋嬪簭鐨勯厤缃?
+	// 2. 閰嶇疆gin
 	r := gin.Default()
 	err := configs.LoadConfig()
 	if err != nil {
-		logs.Error(nil, "加载配置文件失败")
+		logs.Error(nil, "鍔犺浇閰嶇疆鏂囦欢澶辫触")
 		panic(err)
 	}
 	globalConfig := common.GetGlobalConfig()
 	setMiddleware(r, globalConfig)
-	// 初始化数据库
+	// 鍒濆鍖栨暟鎹簱
 	database.InitRedis()
 	defer database.CloseRedis()
 	db := configs.NewDB()
 	if db == nil {
-		logs.Error(nil, "数据库初始化失败，程序退出")
+		logs.Error(nil, "database initialization failed, server exiting")
 		return
 	}
 	defer configs.CloseDB()
-	// 跨域配置 todo 待迁移
+	if err := mysqlbootstrap.EnsureMySQLMenus(configs.GORMDB); err != nil {
+		logs.Error(nil, fmt.Sprintf("mysql menu bootstrap failed: %v", err))
+		return
+	}
+	// 璺ㄥ煙閰嶇疆 todo 寰呰縼绉?
 	r.Use(cors.New(cors.Config{
-		//AllowOrigins:     []string{"http://127.0.0.1:5174", "http://localhost:5174"}, // 前端地址
+		//AllowOrigins:     []string{"http://127.0.0.1:5174", "http://localhost:5174"}, // 鍓嶇鍦板潃
 		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-ES-Host", "X-ES-Username", "X-ES-Password", "X-Requested-With", "Accept", "X-HTTP-Method-Override"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-ES-Host", "X-ES-Username", "X-ES-Password", "X-Connection-Token", "X-Requested-With", "Accept", "X-HTTP-Method-Override"},
 		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
-	// 初始化 prometheus monitor
+	// 鍒濆鍖?prometheus monitor
 	monitor.InitPrometheus()
 	configs.InitConfig()
 	probe.StartInstanceStatusProbe()
-	// 3. 日志配置
-	logs.Info(nil, "程序启动成功")
+	// 3. 鏃ュ織閰嶇疆
+	logs.Info(nil, "绋嬪簭鍚姩鎴愬姛")
 
-	// Swagger API文档 - 初始化已移至 config 包
+	// Swagger API鏂囨。 - 鍒濆鍖栧凡绉昏嚦 config 鍖?
 	configs.InitSwagger(r)
 
-	// 添加健康检查端点
+	// 娣诲姞鍋ュ悍妫€鏌ョ鐐?
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"status":    "ok",
@@ -94,14 +99,14 @@ func main() {
 
 	executor.InitExecutors()
 
-	// 注册路由
+	// 娉ㄥ唽璺敱
 	routers.RegisterRouters(r, configs.GORMDB)
-	// 注册WebSocket路由
+	// 娉ㄥ唽WebSocket璺敱
 	websocket.RegisterWebSocketRoutes(r)
 
 	go func() {
 		if err := loadCronSchedules(configs.GORMDB); err != nil {
-			logs.Error(nil, fmt.Sprintf("加载定时调度失败: %v", err))
+			logs.Error(nil, fmt.Sprintf("鍔犺浇瀹氭椂璋冨害澶辫触: %v", err))
 		}
 	}()
 
@@ -115,16 +120,21 @@ func main() {
 	}
 }
 
-// 设置中间件
+// 璁剧疆涓棿浠?
 func setMiddleware(router *gin.Engine, globalConfig *common.GlobalConfig) {
 	excludePaths := append([]string{}, globalConfig.Jwt.ExcludePaths...)
-	// 认证
+	// 璁よ瘉
 	router.Use(middlewares.Authenticate(excludePaths...))
 	router.Use(middlewares.Metrics())
 	router.Use(middlewares.IPRateLimit())
 }
 
 func loadCronSchedules(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&model.TaskWorkflow{}) {
+		logs.Info(nil, "task_workflows 琛ㄤ笉瀛樺湪锛岃烦杩囧畾鏃跺伐浣滄祦鍔犺浇")
+		return nil
+	}
+
 	var workflows []*model.TaskWorkflow
 	if err := db.Where("status = ? AND cron_expression IS NOT NULL AND cron_expression != ?", 1, "").Find(&workflows).Error; err != nil {
 		return err
@@ -146,12 +156,13 @@ func loadCronSchedules(db *gorm.DB) error {
 		}
 		err := cronScheduler.AddWorkflow(workflow, nodes, edges)
 		if err != nil {
-			log.Printf("调度失败：%v", err.Error())
+			log.Printf("璋冨害澶辫触锛?v", err.Error())
 			continue
 		}
 		count++
 	}
 
-	logs.Info(nil, fmt.Sprintf("已加载 %d 个定时工作流", count))
+	logs.Info(nil, fmt.Sprintf("宸插姞杞?%d 涓畾鏃跺伐浣滄祦", count))
 	return nil
 }
+

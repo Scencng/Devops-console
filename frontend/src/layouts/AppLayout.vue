@@ -40,20 +40,25 @@
                     <el-icon><component :is="sub.icon" /></el-icon>
                     <span>{{ sub.name }}</span>
                   </template>
-                  <el-menu-item v-for="leaf in sub.children" :key="leaf.id" :index="leaf.path">
+                  <el-menu-item
+                    v-for="leaf in sub.children"
+                    :key="leaf.id"
+                    :index="leaf.path"
+                    @mouseenter="handleMenuHover(leaf.path)"
+                  >
                     <el-icon v-if="leaf.icon"><component :is="leaf.icon" /></el-icon>
                     <template #title>{{ leaf.name }}</template>
                   </el-menu-item>
                 </el-sub-menu>
                 <!-- 二级无子菜单 -->
-                <el-menu-item v-else :index="sub.path">
+                <el-menu-item v-else :index="sub.path" @mouseenter="handleMenuHover(sub.path)">
                   <el-icon v-if="sub.icon"><component :is="sub.icon" /></el-icon>
                   <template #title>{{ sub.name }}</template>
                 </el-menu-item>
               </template>
             </el-sub-menu>
             <!-- 无子菜单（一级直达） -->
-            <el-menu-item v-else :index="item.path">
+            <el-menu-item v-else :index="item.path" @mouseenter="handleMenuHover(item.path)">
               <el-icon><component :is="item.icon" /></el-icon>
               <template #title><span>{{ item.name }}</span></template>
             </el-menu-item>
@@ -238,6 +243,9 @@ import {getInstanceList, getInstanceTypes} from '@/api/instance.js'
 import {getSelectedInstanceType, setSelectedInstance} from '@/stores/instanceStore.js'
 import {useKafkaStore} from '@/stores/kafkaStore.js'
 import {usePermissionStore} from '@/stores/permissionStore.js'
+import { useConnectionStore } from '@/mysql/stores/connection'
+import { preloadExplorerTree } from '@/mysql/utils/explorer'
+import { preloadSecurityOverview } from '@/mysql/utils/security-overview'
 import {
   ArrowDown,
   Bell,
@@ -263,6 +271,7 @@ const route = useRoute()
 const router = useRouter()
 const permStore = usePermissionStore()
 const kafkaStore = useKafkaStore()
+const connectionStore = useConnectionStore()
 const { clusterOptions, selectedClusterId } = storeToRefs(kafkaStore)
 
 // 状态
@@ -280,7 +289,100 @@ const isKafkaRoute = computed(() => route.path === '/kafka' || route.path.starts
 // 动态菜单：直接使用 permissionStore 中的 menuTree
 // menuTree 已由路由守卫加载，这里只需读取
 // ======================================================
-const sidebarMenus = computed(() => permStore.menuTree)
+const mysqlMenuOrder = new Map([
+  ['/mysql/workbench', 1],
+  ['/mysql/databases', 2],
+  ['/mysql/data', 3],
+  ['/mysql/query', 4],
+  ['/mysql/security', 5],
+  ['/mysql/backup', 6]
+])
+
+const topLevelMenuOrder = new Map([
+  ['首页', 1],
+  ['实例管理', 2],
+  ['Kubernetes', 3],
+  ['Kafka', 4],
+  ['Elasticsearch', 5],
+  ['MySQL', 6],
+  ['资源管理', 7],
+  ['监控中心', 8],
+  ['系统管理', 9]
+])
+
+function resolveMysqlMenuOrder(item) {
+  if (!item) {
+    return Number.MAX_SAFE_INTEGER
+  }
+
+  if (item.path && mysqlMenuOrder.has(item.path)) {
+    return mysqlMenuOrder.get(item.path)
+  }
+
+  if (!item.children || item.children.length === 0) {
+    return Number.MAX_SAFE_INTEGER
+  }
+
+  return item.children.reduce((lowest, child) => Math.min(lowest, resolveMysqlMenuOrder(child)), Number.MAX_SAFE_INTEGER)
+}
+
+function sortMysqlMenus(items) {
+  return [...(items || [])]
+    .map((item) => ({
+      ...item,
+      children: item.children && item.children.length > 0 ? sortMysqlMenus(item.children) : item.children
+    }))
+    .sort((left, right) => {
+      const leftOrder = resolveMysqlMenuOrder(left)
+      const rightOrder = resolveMysqlMenuOrder(right)
+      if (leftOrder !== rightOrder) {
+        return leftOrder - rightOrder
+      }
+      return 0
+    })
+}
+
+function resolveTopLevelMenuOrder(item) {
+  if (!item) {
+    return Number.MAX_SAFE_INTEGER
+  }
+
+  if (item.name && topLevelMenuOrder.has(item.name)) {
+    return topLevelMenuOrder.get(item.name)
+  }
+
+  return Number.MAX_SAFE_INTEGER
+}
+
+function sortTopLevelMenus(items) {
+  return [...(items || [])].sort((left, right) => {
+    const leftOrder = resolveTopLevelMenuOrder(left)
+    const rightOrder = resolveTopLevelMenuOrder(right)
+
+    if (leftOrder !== rightOrder) {
+      return leftOrder - rightOrder
+    }
+
+    return 0
+  })
+}
+
+function normalizeMenuTree(items) {
+  return sortTopLevelMenus((items || []).map((item) => {
+    const nextItem = {
+      ...item,
+      children: item.children && item.children.length > 0 ? normalizeMenuTree(item.children) : item.children
+    }
+
+    if (item.path === '/mysql' || item.name === 'MySQL') {
+      nextItem.children = sortMysqlMenus(nextItem.children)
+    }
+
+    return nextItem
+  }))
+}
+
+const sidebarMenus = computed(() => normalizeMenuTree(permStore.menuTree))
 
 // 保留，兼容其他地方的引用
 const allMenuRoutes = computed(() => [])
@@ -315,6 +417,8 @@ const filteredKafkaClusterList = computed(() => {
 })
 
 const currentSelectionList = computed(() => (isKafkaRoute.value ? filteredKafkaClusterList.value : filteredInstanceList.value))
+const prefetchedRouteComponents = new Set()
+const prefetchedRouteData = new Set()
 
 // 过滤实例列表
 const filteredInstanceList = computed(() => {
@@ -417,6 +521,60 @@ const handleDropdownVisible = (visible) => {
   }
 }
 
+const mysqlRouteComponentPreloaders = {
+  '/mysql/workbench': () => import('../views/mysql/ConnectionManagement.vue'),
+  '/mysql/databases': () => import('../views/mysql/DatabaseManagement.vue'),
+  '/mysql/data': () => import('../views/mysql/DataManagement.vue'),
+  '/mysql/query': () => import('../views/mysql/SqlQuery.vue'),
+  '/mysql/security': () => import('../views/mysql/UserPermissionManagement.vue'),
+  '/mysql/backup': () => import('../views/mysql/BackupManagement.vue')
+}
+
+const mysqlRouteDataPreloaders = {
+  '/mysql/workbench': () => preloadExplorerTree(),
+  '/mysql/databases': () => preloadExplorerTree(),
+  '/mysql/security': () => preloadSecurityOverview()
+}
+
+function prefetchMenuRoute(path) {
+  const preloadComponent = mysqlRouteComponentPreloaders[path]
+  if (preloadComponent && !prefetchedRouteComponents.has(path)) {
+    prefetchedRouteComponents.add(path)
+    void preloadComponent().catch(() => {
+      prefetchedRouteComponents.delete(path)
+    })
+  }
+
+  const preloadData = mysqlRouteDataPreloaders[path]
+  if (preloadData && connectionStore.hasConnection && !prefetchedRouteData.has(path)) {
+    prefetchedRouteData.add(path)
+    void preloadData().catch(() => {
+      prefetchedRouteData.delete(path)
+    })
+  }
+}
+
+function queueMysqlRoutePrefetch() {
+  const task = () => {
+    Object.keys(mysqlRouteComponentPreloaders).forEach((path) => {
+      prefetchMenuRoute(path)
+    })
+  }
+
+  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+    window.requestIdleCallback(task, { timeout: 1200 })
+    return
+  }
+
+  window.setTimeout(task, 200)
+}
+
+function handleMenuHover(path) {
+  if (typeof path === 'string' && path.startsWith('/mysql/')) {
+    prefetchMenuRoute(path)
+  }
+}
+
 // Data fetching
 const fetchInstances = async () => {
   try {
@@ -493,6 +651,7 @@ onMounted(() => {
   if (isKafkaRoute.value) {
     kafkaStore.loadClusterOptions().catch(() => {})
   }
+  queueMysqlRoutePrefetch()
 })
 
 // Watchers
