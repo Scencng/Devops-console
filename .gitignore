@@ -13,3 +13,5 @@ test-results/
 mysql-console/_push_mysql_v2/
 **/node_modules/
 **/dist/
+**/.env
+**/.env.local
